@@ -12,105 +12,7 @@ __all__ = ['Reservoir']
 
 class Reservoir(Module):
     """
-    A Reservoir layer for Echo State Networks
-    
-    Args:
-        input_size: the number of expected features in the input `x`
-        hidden_size: the number of features in the hidden state `h`
-        num_layers: the number of reservoir layers
-        activation: name of the activation function from `torch` (e.g. `torch.tanh`)
-        leakage: the value of the leaking parameter `alpha`
-        input_scaling: the value for the desired scaling of the input (must be `<= 1`)
-        rho: the desired spectral radius of the recurrent matrix (must be `< 1`)
-        bias: if ``False``, the layer does not use bias weights `b`
-        mode: execution mode of the reservoir (vanilla or intrinsic plasticity)
-        kernel_initializer: the kind of initialization of the input transformation. Default: `'uniform'`
-        recurrent_initializer: the kind of initialization of the recurrent matrix. Default: `'normal'`
-    """
-
-    def __init__(self,
-                 input_size: int, 
-                 hidden_size: int,
-                 num_layers: int,
-                 activation: str,
-                 leakage: float = 1.,
-                 input_scaling: float = 0.9,
-                 rho: float = 0.99,
-                 bias: bool = False,
-                 kernel_initializer: Union[str, Callable[[Size], Tensor]] = 'uniform',
-                 recurrent_initializer: Union[str, Callable[[Size], Tensor]] = 'normal',
-                 mode: str = 'vanilla',
-                 mu: Optional[float] = None,
-                 sigma: Optional[float] = None):
-        super().__init__()
-        assert num_layers > 0
-
-        self.layers = ModuleList([
-            ReservoirLayer(
-                input_size=input_size if i == 0 else hidden_size, 
-                hidden_size=hidden_size,
-                activation=activation,
-                leakage=leakage,
-                input_scaling=input_scaling,
-                rho=rho,
-                bias=bias,
-                kernel_initializer=kernel_initializer,
-                recurrent_initializer=recurrent_initializer,
-                mode=mode,
-                mu=mu,
-                sigma=sigma
-            )
-        for i in range(num_layers)])
-
-    def forward(self, input: Tensor, initial_state: Optional[Union[List[Tensor], Tensor]] = None, 
-                mask: Optional[List[Tensor]] = None) -> Tensor:
-        """
-        Encode input
-        :param input: Input graph signal (nodes × input_size)
-        :param initial_state: Initial state (nodes × hidden_size) for all reservoir layers, default zeros
-        :return: Encoding (samples × dim)
-        """
-        if initial_state is None:
-            initial_state = [torch.zeros(layer.out_features).to(input) for layer in self.layers]
-        elif len(initial_state) != self.num_layers and initial_state.dim() == 2:
-            initial_state = [initial_state.clone() for _ in range(self.num_layers)]
-        
-        embeddings = []
-        timesteps = input.shape[0]
-        input_i = input 
-        for i, layer in enumerate(self.layers):
-            embeddings_i = []
-            for t in range(timesteps):
-                h_t = layer(
-                        input_i[t],
-                        initial_state[i] if t == 0 else h_t,
-                        None if mask is None else mask[t]
-                      )
-                embeddings_i.append(h_t)
-            input_i = torch.stack(embeddings_i, dim=0)
-            embeddings.append(input_i)
-        
-        return torch.stack(embeddings, dim=-2)
-
-    @property
-    def num_layers(self) -> int:
-        """Number of reservoir layers"""
-        return len(self.layers)
-
-    @property
-    def input_size(self) -> int:
-        """Input dimension"""
-        return self.layers[0].input_weight.shape[1]
-
-    @property
-    def out_features(self) -> int:
-        """Embedding dimension"""
-        raise NotImplementedError()
-
-
-class ReservoirLayer(Module):
-    """
-    A Reservoir layer for Echo State Networks
+    A Reservoir of for Echo State Networks
     
     Args:
         input_size: the number of expected features in the input `x`
@@ -177,11 +79,26 @@ class ReservoirLayer(Module):
             self.v = Parameter(torch.tensor(sigma**2), requires_grad=False)
 
 
-    def forward(self, input: Tensor, state: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+    def forward(self, input: Tensor, initial_state: Optional[Tensor] = None, mask: Optional[Tensor] = None) -> Tensor:
         if self.mode == 'vanilla':
-            return self._vanilla_state_comp(input, state, mask)
+            reservoir_f = self._vanilla_state_comp
         if self.mode == 'intrinsic_plasticity':
-            return self._ip_state_comp(input, state, mask)
+            reservoir_f = self._ip_state_comp
+
+        if initial_state is None:
+            initial_state = torch.zeros(self.hidden_size).to(input)
+        
+        timesteps = input.shape[0]
+        embeddings = []
+        for t in range(timesteps):
+            h_t = reservoir_f(
+                input[t],
+                initial_state if t == 0 else h_t,
+                None if mask is None else mask[t]
+            )
+            embeddings.append(h_t)
+        
+        return torch.stack(embeddings, dim=0)
 
 
     def _vanilla_state_comp(self, input: Tensor, state: Tensor, mask: Optional[Tensor] = None) -> Tensor:
@@ -214,13 +131,9 @@ class ReservoirLayer(Module):
 
 
     @property
-    def out_features(self) -> int:
+    def hidden_size(self) -> int:
         """Reservoir state dimension"""
         return self.W_hat.shape[1]
-
-
-    def extra_repr(self) -> str:
-        return f'in={self.input_size}, out={self.out_features}, bias={self.bias is not None}'
 
 
 def init_params(name: str, **options) -> Callable[[Size], Tensor]:
