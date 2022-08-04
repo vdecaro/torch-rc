@@ -1,29 +1,29 @@
-import torch
+import argparse
+import os
 
-from data.loader import load_dataset
-from esn.reservoir import Reservoir
+import ray
+from exp.phase import model_selection, retraining, test
+
+parser = argparse.ArgumentParser()
+parser.add_argument('dataset')
+parser.add_argument('--mode', '-m', type=str)
+parser.add_argument('--percentage', '-p', type=int, default=100)
+parser.add_argument('--gpu_trial', '-g', type=int, default=1)
+
+
 
 def main():
-    tensor = load_dataset('mc100')
+    args = parser.parse_args()
+    dataset, perc, gt, mode = args.dataset, args.percentage, args.gpu_trial, args.mode
 
-    reservoir = Reservoir(
-        input_size=202,
-        hidden_size=100,
-        num_layers=3,
-        activation='tanh',
-        leakage=1,
-        input_scaling=0.2,
-        rho=0.99,
-        bias=True,
-        kernel_initializer='uniform',
-        recurrent_initializer='uniform',
-        mode='intrinsic_plasticity',
-        mu=0,
-        sigma=0.25
-    )
-    reservoir.zero_grad()
-    print(reservoir(tensor))
+    exp_dir = f"experiments/{config['DATASET']}_{perc}_{mode}"
+    if not os.path.exists(exp_dir):
+        os.makedirs(exp_dir)
+
+    ray.init()
     
+    model_selection.run(dataset, perc, mode, gt)
+    retraining.run(dataset, perc, mode, gt, exp_dir)
 
 if __name__ == '__main__':
     main()

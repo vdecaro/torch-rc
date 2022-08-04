@@ -25,6 +25,8 @@ class IntrinsicPlasticity:
         self._tmp_in_signal, self._tmp_h, self._tmp_mask = None, None
 
     def step(self) -> None:
+        self._reservoir.net_a.grad = F.normalize(self._reservoir.net_a.grad, dim=0)
+        self._reservoir.net_b.grad = F.normalize(self._reservoir.net_b.grad, dim=0)
         self._opt.step()
     
     @torch.no_grad
@@ -41,8 +43,8 @@ class IntrinsicPlasticity:
             net_b_grad = net_b_grad.mean(0)
             net_a_grad = net_a_grad.mean(0)
         
-        self._reservoir.net_b.grad = net_b_grad
-        self._reservoir.net_a.grad = net_a_grad
+        self._reservoir.net_b.grad += net_b_grad
+        self._reservoir.net_a.grad += net_a_grad
         self._tmp_in_signal, self._tmp_h = None, None
     
     def compile(self, reservoir: Reservoir) -> None:

@@ -5,6 +5,7 @@ from torch import Tensor
 from typing import Optional, Tuple, List, Callable, Dict
 
 
+############ CAMBIARE IN LOADER CON INPUT TRANSFORM
 def fit_readout(X: Tensor, Y: Tensor, l2: Optional[float] = None) -> Tuple[Tensor, Tensor]:
     A, B = compute_ridge_matrices(X, Y)
     return solve_ab_decomposition(A, B, l2)
