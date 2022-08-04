@@ -1,13 +1,11 @@
-from typing import Optional, Callable, Union, List
+from typing import Optional, Callable, Union
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor, Size
-from torch.nn import Module, Parameter, ModuleList
+from torch.nn import Module, Parameter
 
 from . import initializers
-
-__all__ = ['Reservoir']
 
 
 class Reservoir(Module):
@@ -37,13 +35,9 @@ class Reservoir(Module):
                  bias: bool = False,
                  kernel_initializer: Union[str, Callable[[Size], Tensor]] = 'uniform',
                  recurrent_initializer: Union[str, Callable[[Size], Tensor]] = 'normal',
-                 mode: str = 'vanilla',
-                 mu: Optional[float] = None,
-                 sigma: Optional[float] = None) -> None:
+                 net_gain_and_bias: bool = False) -> None:
+        
         super().__init__()
-        assert mode in ['vanilla', 'intrinsic_plasticity']
-        if mode == 'intrinsic_plasticity':
-            assert mu is not None and sigma is not None
         assert rho < 1 and input_scaling <= 1
 
         self.input_scaling = Parameter(torch.tensor(input_scaling), requires_grad=False)
@@ -65,64 +59,35 @@ class Reservoir(Module):
 
         self.alpha = Parameter(torch.tensor(leakage), requires_grad=False)
 
-        self.mode = mode
-        if mode == 'intrinsic_plasticity':
-            self.ip_a = Parameter(
+        self.net_gain_and_bias = net_gain_and_bias
+        if net_gain_and_bias:
+            self.net_a = Parameter(
                 init_params('uniform', scale=0.5)(hidden_size),
                 requires_grad=True
             )
-            self.ip_b = Parameter(
+            self.net_b = Parameter(
                 init_params('uniform', scale=0.5)(hidden_size),
                 requires_grad=True
             )
-            self.mu = Parameter(torch.tensor(mu), requires_grad=False)
-            self.v = Parameter(torch.tensor(sigma**2), requires_grad=False)
-
 
     def forward(self, input: Tensor, initial_state: Optional[Tensor] = None, mask: Optional[Tensor] = None) -> Tensor:
-        if self.mode == 'vanilla':
-            reservoir_f = self._vanilla_state_comp
-        if self.mode == 'intrinsic_plasticity':
-            reservoir_f = self._ip_state_comp
-
         if initial_state is None:
             initial_state = torch.zeros(self.hidden_size).to(input)
         
+        embeddings = torch.stack([state for state in self._state_comp(input, initial_state, mask)], dim=0)
+        
+        return embeddings
+
+    def _state_comp(self, input: Tensor, initial_state: Tensor, mask: Optional[Tensor] = None):
         timesteps = input.shape[0]
-        embeddings = []
+        state = initial_state
         for t in range(timesteps):
-            h_t = reservoir_f(
-                input[t],
-                initial_state if t == 0 else h_t,
-                None if mask is None else mask[t]
-            )
-            embeddings.append(h_t)
-        
-        return torch.stack(embeddings, dim=0)
-
-
-    def _vanilla_state_comp(self, input: Tensor, state: Tensor, mask: Optional[Tensor] = None) -> Tensor:
-        h_t = torch.tanh(F.linear(input, self.W_in, self.b) + F.linear(state, self.W_hat))
-        output = (1 - self.alpha) * state + self.alpha * h_t
-        return output if mask is None else mask * output
-
-
-    def _ip_state_comp(self, input: Tensor, state: Tensor, mask: Optional[Tensor] = None) -> Tensor:
-        in_signal = F.linear(input, self.W_in, self.b) + F.linear(state, self.W_hat)
-        h_t = torch.tanh(in_signal * self.ip_a + self.ip_b)
-        output = (1 - self.alpha) * state + self.alpha * h_t
-
-        if self.training:
-            ip_b_grad = -(self.mu/self.v) + (h_t/self.v)*(2*self.v + 1 - h_t*(h_t + self.mu))
-            ip_a_grad = 1/self.ip_a + ip_b_grad*in_signal
-            if self.ip_b.grad is None:
-                self.ip_b.grad = torch.zeros_like(self.ip_b)
-                self.ip_a.grad = torch.zeros_like(self.ip_a)
-            self.ip_b.grad += ip_b_grad if mask is None else mask * ip_b_grad
-            self.ip_a.grad += ip_a_grad if mask is None else mask * ip_a_grad
-        
-        return output if mask is None else mask * output
-
+            in_signal_t = F.linear(input[t], self.W_in, self.b) + F.linear(state, self.W_hat)
+            if self.net_gain_and_bias:
+                in_signal_t = in_signal_t * self.net_a + self.net_b
+            h_t = torch.tanh(F.linear(input[t], self.W_in, self.b) + F.linear(state, self.W_hat))
+            state = (1 - self.alpha) * state + self.alpha * h_t
+            yield state if mask is None else mask * state
 
     @property
     def input_size(self) -> int:
