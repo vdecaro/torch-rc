@@ -1,3 +1,5 @@
+from lib2to3.pgen2.token import OP
+from optparse import Option
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -7,21 +9,24 @@ from typing import Literal, Optional, Tuple, List, Callable, Dict, Union
 from operator import itemgetter
 
 
+@torch.no_grad()
 def fit_and_validate_readout(train_loader: DataLoader, 
                              eval_loader: DataLoader,
                              l2_values: List[float],
                              score_fn: Callable[[Tensor, Tensor], float],
                              mode: Literal['min', 'max'],
-                             preprocess_fn: Optional[Callable] = None) -> Tuple[Tensor, Tensor]:
+                             preprocess_fn: Optional[Callable] = None,
+                             device: Optional[str] = 'cpu') -> Tuple[Tensor, Tensor]:
     # Training
-    all_W = fit_readout(train_loader, preprocess_fn, l2_values)
+    all_W = fit_readout(train_loader, preprocess_fn, l2_values, device)
     if not isinstance(all_W, List):
         all_W = [all_W]
-    
+        
+    all_W = [w.to(device) for w in all_W]
     # Validation
     eval_scores, n_samples = [0 for _ in range(len(l2_values))], 0
     for x, y in eval_loader:
-
+        x = x.to(device)
         # Processing x
         if preprocess_fn is not None:
             x = preprocess_fn(x)
@@ -45,20 +50,22 @@ def fit_and_validate_readout(train_loader: DataLoader,
 
     return all_W[best_idx], l2_values[best_idx], best_score
 
-
+@torch.no_grad()
 def fit_readout(train_loader: torch.utils.data.DataLoader,
                 preprocess_fn: Optional[Callable] = None,
-                l2: Optional[Union[float, List[float]]] = None) -> Tuple[Tensor, Tensor]:
+                l2: Optional[Union[float, List[float]]] = None,
+                device: Optional[str] = 'cpu') -> Tuple[Tensor, Tensor]:
 
-    A, B = compute_ridge_matrices(train_loader, preprocess_fn)
+    A, B = compute_ridge_matrices(train_loader, preprocess_fn, device)
     if isinstance(l2, List):
-        return [solve_ab_decomposition(A, B, curr_l2) for curr_l2 in l2]
+        return [solve_ab_decomposition(A, B, curr_l2, device) for curr_l2 in l2]
     else:
-        return solve_ab_decomposition(A, B, l2)
+        return solve_ab_decomposition(A, B, l2, device)
 
-
+@torch.no_grad()
 def compute_ridge_matrices(loader: DataLoader,
-                           preprocess_fn: Optional[Callable] = None) -> Tuple[Tensor, Tensor]:
+                           preprocess_fn: Optional[Callable] = None,
+                           device: Optional[str] = 'cpu') -> Tuple[Tensor, Tensor]:
     """
     Computes the matrices A and B for incremental ridge regression. For each batch in the loader, it applies the
     preprocess_fn on the x sample, resizes it to (n_samples, hidden_size) and computes the values of A and B.
@@ -72,21 +79,23 @@ def compute_ridge_matrices(loader: DataLoader,
     """
     A, B = None, None
     for x, y in loader:
+        x = x.to(device)
         if preprocess_fn is not None:
             x = preprocess_fn(x)
         size_x = x.size()
         size_y = y.size()
-        if len(size_x) > 3:
+        if len(size_x) > 2:
             x = x.reshape(-1, size_x[-1])
             y = y.reshape(-1, size_y[-1])
         
-        batch_A, batch_B = y.Y @ x, x.T @ x
+        y = y.to(device).float()
+        batch_A, batch_B = (y.T @ x).cpu(), (x.T @ x).cpu()
         A, B = (A + batch_A, B + batch_B) if A is not None else (batch_A, batch_B)
     
     return A, B
 
-
-def solve_ab_decomposition(A: Tensor, B: Tensor, l2: Optional[float] = None) -> Tensor:
+@torch.no_grad()
+def solve_ab_decomposition(A: Tensor, B: Tensor, l2: Optional[float] = None, device: Optional[str] = 'cpu') -> Tensor:
     """
     Computes the result of the AB decomposition for solving the linear system
 
@@ -98,5 +107,6 @@ def solve_ab_decomposition(A: Tensor, B: Tensor, l2: Optional[float] = None) -> 
     Returns:
         Tensor: matrix W of shape [label_size x hidden_size]
     """
+    A = A.to(device)
     B = B + torch.eye(B.shape[0]).to(B) * l2 if l2 else B
     return A @ B.to('cpu').pinverse().to(A)

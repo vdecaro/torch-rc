@@ -7,7 +7,6 @@ import torch
 class CentralizedDataset(torch.utils.data.Dataset):
 
     def __init__(self, name: Literal['WESAD', 'HHAR'], idx: List[int]) -> None:
-        super().__init__()
         self.users = idx
         if name == 'WESAD':
             from .wesad import WESADDataset
@@ -33,10 +32,10 @@ class CentralizedDataset(torch.utils.data.Dataset):
         return sum([len(d) for d in self.data])
 
     def __getitem__(self, i: int):
-        data_idx = 0
-        while i > len(self.data[data_idx]):
-            i -= len(self.data[data_idx])
-            data_idx += 1
+        for d in self.data:
+            if i < len(d):
+                break
+            i -= len(d)
         
-        return self.data[data_idx][i]
+        return d[i]
     

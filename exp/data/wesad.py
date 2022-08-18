@@ -6,8 +6,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-RAW_WESAD_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'raw', 'WESAD')
-WESAD_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'processed', 'WESAD')
+RAW_WESAD_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'datasets', 'raw', 'WESAD')
+WESAD_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'datasets', 'processed', 'WESAD')
 
 USERS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "13", "14", "15", "16", "17"]
 

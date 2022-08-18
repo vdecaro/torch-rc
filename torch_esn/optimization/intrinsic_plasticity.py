@@ -3,6 +3,7 @@ import torch.nn.functional as F
 
 from torch import Tensor
 from typing import Callable, Optional
+from types import MethodType
 
 from ..model.reservoir import Reservoir
 
@@ -22,14 +23,14 @@ class IntrinsicPlasticity:
         self._opt: torch.optim.SGD = None
         self.compiled: bool = False
 
-        self._tmp_in_signal, self._tmp_h, self._tmp_mask = None, None
+        self._tmp_in_signal, self._tmp_h, self._tmp_mask = None, None, None
 
     def step(self) -> None:
         self._reservoir.net_a.grad = F.normalize(self._reservoir.net_a.grad, dim=0)
         self._reservoir.net_b.grad = F.normalize(self._reservoir.net_b.grad, dim=0)
         self._opt.step()
     
-    @torch.no_grad
+    @torch.no_grad()
     def backward(self):
         net_b_grad = -(self.mu/self.v) + (self._tmp_h/self.v)*(2*self.v + 1 - self._tmp_h*(self._tmp_h + self.mu))
         net_a_grad = 1/self._reservoir.net_a + net_b_grad*self._tmp_in_signal
@@ -43,8 +44,12 @@ class IntrinsicPlasticity:
             net_b_grad = net_b_grad.mean(0)
             net_a_grad = net_a_grad.mean(0)
         
-        self._reservoir.net_b.grad += net_b_grad
-        self._reservoir.net_a.grad += net_a_grad
+        if self._reservoir.net_b.grad is not None:
+            self._reservoir.net_b.grad += net_b_grad
+            self._reservoir.net_a.grad += net_a_grad
+        else:
+            self._reservoir.net_b.grad = net_b_grad
+            self._reservoir.net_a.grad = net_a_grad
         self._tmp_in_signal, self._tmp_h = None, None
     
     def compile(self, reservoir: Reservoir) -> None:
@@ -54,22 +59,22 @@ class IntrinsicPlasticity:
 
         self._reservoir = reservoir
         self._old_fwd = reservoir._state_comp
-        self._reservoir._state_comp = self._ip_state_comp()
+        self._reservoir._state_comp = MethodType(self._ip_state_comp(), self._reservoir)
         self._opt = torch.optim.SGD(self._reservoir.parameters(), self._lr)
         self.compiled = True
     
     def detach(self):
         if self.compiled:
-            self._reservoir._state_comp = self._old_fwd
+            self._reservoir._state_comp = MethodType(self._old_fwd, self._reservoir)
             self.compiled = False
     
-    @torch.no_grad
     def _ip_state_comp(self) -> Callable:
-
+        
+        @torch.no_grad()
         def aux_fn(res: Reservoir, input: Tensor, initial_state: Tensor, mask: Optional[Tensor] = None) -> None:
             timesteps, in_signal, h, state = input.shape[0], [], [], initial_state
             for t in range(timesteps):
-                in_signal_t = F.linear(input[t], res.W_in, res.b) + F.linear(state, res.W_hat)
+                in_signal_t = F.linear(input[t].to(res.W_in), res.W_in, res.b) + F.linear(state, res.W_hat)
                 h_t = torch.tanh(in_signal_t * res.net_a + res.net_b)
                 state = (1 - res.alpha) * state + res.alpha * h_t
                 yield state if mask is None else mask * state

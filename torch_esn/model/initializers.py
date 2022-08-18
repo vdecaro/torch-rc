@@ -125,8 +125,8 @@ def rescale_(W: Tensor, rho: Optional[float] = None, sigma: Optional[float] = No
     :return: Rescaled matrix
     """
     if rho is not None:
-        return W.div_(torch.linalg.eigvals(W).abs().max()).mul_(rho)
+        return W.div_(torch.linalg.eigvals(W).abs().max()).mul_(rho).float()
     elif sigma is not None:
-        return W.div_(torch.linalg.matrix_norm(W, ord=2)).mul_(sigma)
+        return W.div_(torch.linalg.matrix_norm(W, ord=2)).mul_(sigma).float()
     elif scale is not None:
-        return W.mul_(scale)
+        return W.mul_(scale).float()

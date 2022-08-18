@@ -69,10 +69,10 @@ class Reservoir(Module):
                 init_params('uniform', scale=0.5)(hidden_size),
                 requires_grad=True
             )
-
+    
     def forward(self, input: Tensor, initial_state: Optional[Tensor] = None, mask: Optional[Tensor] = None) -> Tensor:
         if initial_state is None:
-            initial_state = torch.zeros(self.hidden_size).to(input)
+            initial_state = torch.zeros(self.hidden_size).to(input.device)
         
         embeddings = torch.stack([state for state in self._state_comp(input, initial_state, mask)], dim=0)
         
@@ -82,7 +82,7 @@ class Reservoir(Module):
         timesteps = input.shape[0]
         state = initial_state
         for t in range(timesteps):
-            in_signal_t = F.linear(input[t], self.W_in, self.b) + F.linear(state, self.W_hat)
+            in_signal_t = F.linear(input[t].to(self.W_in), self.W_in, self.b) + F.linear(state, self.W_hat)
             if self.net_gain_and_bias:
                 in_signal_t = in_signal_t * self.net_a + self.net_b
             h_t = torch.tanh(F.linear(input[t], self.W_in, self.b) + F.linear(state, self.W_hat))

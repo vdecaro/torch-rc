@@ -4,7 +4,7 @@ from typing import Literal
 
 import ray
 from ray import tune
-from data.seq_loader import seq_collate_fn
+from ..data.seq_loader import seq_collate_fn
 
 import torch
 import torch.nn.functional as F
@@ -13,7 +13,7 @@ from ..data.centralized_dataset import CentralizedDataset
 import exp.data.split_config as cfg
 
 
-@torch.no_grad
+@torch.no_grad()
 def run(dataset: str,
         perc: int,
         mode: Literal['vanilla', 'intrinsic_plasticity']):

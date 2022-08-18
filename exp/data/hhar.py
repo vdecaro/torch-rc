@@ -8,8 +8,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-RAW_HHAR_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'raw', 'HHAR')
-HHAR_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'processed', 'HHAR')
+RAW_HHAR_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'datasets', 'raw', 'HHAR')
+HHAR_PATH = os.path.join(pathlib.Path(__file__).parent.absolute(), 'datasets', 'processed', 'HHAR')
 
 USERS = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
 PHONES = ['nexus4']#, 's3', 's3mini', 'samsungold']
@@ -42,7 +42,7 @@ class HHARDataset(torch.utils.data.Dataset):
     @seq_length.setter
     def seq_length(self, new_length: int):
         if self._seq_length is None or new_length != self._seq_length:
-            print(f"Setting the length of the chunks in WESAD user {self.user} from {self._seq_length} to {new_length}")
+            print(f"Setting the length of the chunks in HHAR user {self.user} from {self._seq_length} to {new_length}")
             self.X, self.Y = self._to_sequence_chunks(new_length)
             self._seq_length = new_length
     

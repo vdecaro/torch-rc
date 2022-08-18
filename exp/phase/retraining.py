@@ -9,10 +9,10 @@ from ..trainable import ESNTrainable
 def run(dataset: str,
         perc: int,
         mode: Literal['vanilla', 'intrinsic_plasticity'],
-        gt: float, 
-        exp_dir: str):
+        gt: float):
     exp_dir = f"experiments/{dataset}_{perc}_{mode}"
     os.makedirs(exp_dir, exist_ok=True)
+
     config = get_config(dataset, perc, mode)
     if mode == 'intrinsic_plasticity':
         stopper = TrialNoImprovementStopper(metric='eval_score', 
@@ -23,17 +23,13 @@ def run(dataset: str,
     
     reporter = tune.CLIReporter(metric_columns={
                                     'training_iteration': '#Iter',
-                                    'train_score': 'TR-Score',
                                     'eval_score': 'VL-Score', 
                                 },
-                                parameter_columns={'EPOCHS': '#E', 'SIGMA': 'SIGMA', 'HIDDEN_SIZE': '#H', 'SEQ_LENGTH': '#seq', 'LEAKAGE': 'alpha'},
+                                parameter_columns={'SIGMA': 'SIGMA', 'HIDDEN_SIZE': '#H', 'LEAKAGE': 'alpha'},
                                 infer_limit=3,
                                 metric='eval_score',
                                 mode='max')
 
-    n_clients = len(config['TRAIN_USERS'])
-    gpu_size = (1/gt)/(n_clients+1)
-    config['GPU_SIZE'] = gpu_size
     return tune.run(
         ESNTrainable,
         name=f"retraining",
@@ -41,7 +37,7 @@ def run(dataset: str,
         local_dir=exp_dir,
         config=config,
         num_samples=3,
-        resources_per_trial={"CPU": 1, "GPU": gt},
+        resources_per_trial={"cpu": 1, "gpu": gt},
         keep_checkpoints_num=1,
         checkpoint_score_attr='eval_score',
         checkpoint_freq=1,
