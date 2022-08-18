@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 
 import torch
 
@@ -6,7 +6,7 @@ import torch
 
 class CentralizedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, name: str, idx: List[int]) -> None:
+    def __init__(self, name: Literal['WESAD', 'HHAR'], idx: List[int]) -> None:
         super().__init__()
         self.users = idx
         if name == 'WESAD':

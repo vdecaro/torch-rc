@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Dict
 from ray.tune.stopper import Stopper
 
 class TrialNoImprovementStopper(Stopper):
