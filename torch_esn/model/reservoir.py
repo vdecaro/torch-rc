@@ -62,11 +62,11 @@ class Reservoir(Module):
         self.net_gain_and_bias = net_gain_and_bias
         if net_gain_and_bias:
             self.net_a = Parameter(
-                init_params('uniform', scale=0.5)(hidden_size),
+                init_params('ones')(hidden_size),
                 requires_grad=True
             )
             self.net_b = Parameter(
-                init_params('uniform', scale=0.5)(hidden_size),
+                init_params('zeros')(hidden_size),
                 requires_grad=True
             )
     
@@ -74,7 +74,7 @@ class Reservoir(Module):
         if initial_state is None:
             initial_state = torch.zeros(self.hidden_size).to(input.device)
         
-        embeddings = torch.stack([state for state in self._state_comp(input, initial_state, mask)], dim=0)
+        embeddings = torch.stack([state for state in self._state_comp(input.to(self.W_hat), initial_state, mask)], dim=0)
         
         return embeddings
 
@@ -85,7 +85,7 @@ class Reservoir(Module):
             in_signal_t = F.linear(input[t].to(self.W_in), self.W_in, self.b) + F.linear(state, self.W_hat)
             if self.net_gain_and_bias:
                 in_signal_t = in_signal_t * self.net_a + self.net_b
-            h_t = torch.tanh(F.linear(input[t], self.W_in, self.b) + F.linear(state, self.W_hat))
+            h_t = torch.tanh(in_signal_t)
             state = (1 - self.alpha) * state + self.alpha * h_t
             yield state if mask is None else mask * state
 

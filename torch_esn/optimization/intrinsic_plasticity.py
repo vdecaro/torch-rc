@@ -32,8 +32,8 @@ class IntrinsicPlasticity:
     
     @torch.no_grad()
     def backward(self):
-        net_b_grad = -(self.mu/self.v) + (self._tmp_h/self.v)*(2*self.v + 1 - self._tmp_h*(self._tmp_h + self.mu))
-        net_a_grad = 1/self._reservoir.net_a + net_b_grad*self._tmp_in_signal
+        net_b_grad = -(self.mu/self.v) + (self._tmp_h/self.v)*(2*self.v + 1 - self._tmp_h**2 + self.mu*self._tmp_h)
+        net_a_grad = -1/self._reservoir.net_a + net_b_grad*self._tmp_in_signal
         if self._tmp_mask is not None:
             net_b_grad = self._tmp_mask * net_b_grad
             net_a_grad = self._tmp_mask * net_a_grad
@@ -44,13 +44,9 @@ class IntrinsicPlasticity:
             net_b_grad = net_b_grad.mean(0)
             net_a_grad = net_a_grad.mean(0)
         
-        if self._reservoir.net_b.grad is not None:
-            self._reservoir.net_b.grad += net_b_grad
-            self._reservoir.net_a.grad += net_a_grad
-        else:
-            self._reservoir.net_b.grad = net_b_grad
-            self._reservoir.net_a.grad = net_a_grad
-        self._tmp_in_signal, self._tmp_h = None, None
+        self._reservoir.net_b.grad = -net_b_grad
+        self._reservoir.net_a.grad = -net_a_grad
+        self._tmp_in_signal, self._tmp_h, self._tmp_mask = None, None, None
     
     def compile(self, reservoir: Reservoir) -> None:
         if not reservoir.net_gain_and_bias:
@@ -74,7 +70,7 @@ class IntrinsicPlasticity:
         def aux_fn(res: Reservoir, input: Tensor, initial_state: Tensor, mask: Optional[Tensor] = None) -> None:
             timesteps, in_signal, h, state = input.shape[0], [], [], initial_state
             for t in range(timesteps):
-                in_signal_t = F.linear(input[t].to(res.W_in), res.W_in, res.b) + F.linear(state, res.W_hat)
+                in_signal_t = F.linear(input[t], res.W_in, res.b) + F.linear(state, res.W_hat)
                 h_t = torch.tanh(in_signal_t * res.net_a + res.net_b)
                 state = (1 - res.alpha) * state + res.alpha * h_t
                 yield state if mask is None else mask * state

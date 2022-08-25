@@ -1,6 +1,6 @@
 import argparse
 import os
-os.environ['TUNE_MAX_PENDING_TRIALS_PG'] = '10'
+os.environ['TUNE_MAX_PENDING_TRIALS_PG'] = '20'
 import ray
 from exp.phase import model_selection, retraining, test
 
@@ -15,10 +15,10 @@ def main():
     args = parser.parse_args()
     dataset, perc, gt, mode = args.dataset, args.percentage, args.gpu_trial, args.mode
 
-    ray.init(local_mode=True)    
+    ray.init()    
     model_selection.run(dataset, perc, mode, gt)
     retraining.run(dataset, perc, mode, gt)
-    test.run(dataset, perc, mode, gt)
+    test.run(dataset, perc, mode)
 
 if __name__ == '__main__':
     main()

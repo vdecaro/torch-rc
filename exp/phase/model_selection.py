@@ -45,8 +45,7 @@ def run(dataset: str,
         max_failures=0,
         progress_reporter=reporter,
         verbose=1,
-        reuse_actors=True,
-        fail_fast='raise'
+        reuse_actors=True
     )
 
 
