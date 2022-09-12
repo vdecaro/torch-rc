@@ -72,7 +72,7 @@ class Reservoir(Module):
     
     def forward(self, input: Tensor, initial_state: Optional[Tensor] = None, mask: Optional[Tensor] = None) -> Tensor:
         if initial_state is None:
-            initial_state = torch.zeros(self.hidden_size).to(input.device)
+            initial_state = torch.zeros(self.hidden_size).to(self.W_hat)
         
         embeddings = torch.stack([state for state in self._state_comp(input.to(self.W_hat), initial_state, mask)], dim=0)
         
