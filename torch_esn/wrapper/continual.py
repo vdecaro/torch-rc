@@ -20,7 +20,6 @@ class ContinualESNWrapper(ESNWrapper):
         batch_size: int,
         strategy: Literal["naive", "joint", "replay"],
     ) -> None:
-
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.batch_size = batch_size
         self.strategy = strategy
@@ -42,7 +41,6 @@ class ContinualESNWrapper(ESNWrapper):
         epochs: int = 1,
         device: Optional[str] = None,
     ) -> Reservoir:
-
         return super().ip_step(
             self.get_loader(context, mode=self.strategy),
             reservoir,
@@ -58,17 +56,20 @@ class ContinualESNWrapper(ESNWrapper):
         context: int,
         reservoir: Reservoir,
         l2: Optional[List[float]] = None,
+        perc_rec: Optional[float] = None,
+        alpha: Optional[float] = 1.0,
         prev_A: Optional[torch.Tensor] = None,
         prev_B: Optional[torch.Tensor] = None,
         with_readout: bool = True,
         device: Optional[str] = None,
     ):
-
         strategy = "joint_replay" if self.strategy == "replay" else self.strategy
         return super().ridge_step(
             self.get_loader(context, mode=strategy),
             reservoir,
             l2=l2,
+            perc_rec=perc_rec,
+            alpha=alpha,
             prev_A=prev_A,
             prev_B=prev_B,
             with_readout=with_readout,
@@ -83,7 +84,6 @@ class ContinualESNWrapper(ESNWrapper):
         sigma: float,
         device: Optional[str] = None,
     ) -> Tuple[float, int]:
-
         return super().test_likelihood(
             loader=self.get_loader(context),
             reservoir=reservoir,
@@ -99,7 +99,6 @@ class ContinualESNWrapper(ESNWrapper):
         reservoir: Reservoir,
         device: Optional[str] = None,
     ) -> Tuple[float, int]:
-
         return super().test_accuracy(
             loader=self.get_loader(context),
             readout=readout,
@@ -108,7 +107,6 @@ class ContinualESNWrapper(ESNWrapper):
         )
 
     def get_loader(self, context: int, mode: Optional[str] = None):
-
         if mode is None or mode == "naive":
             if context >= 0:
                 dataset = self.stream[context].dataset
