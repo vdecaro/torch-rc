@@ -153,6 +153,8 @@ def validate_readout(
 def compute_ridge_matrices(
     loader: DataLoader,
     preprocess_fn: Optional[Callable] = None,
+    perc_rec: Optional[float] = None,
+    alpha: Optional[float] = 1.0,
     device: Optional[str] = None,
 ) -> Tuple[Tensor, Tensor]:
     """
@@ -162,7 +164,15 @@ def compute_ridge_matrices(
 
     Args:
         loader (DataLoader): torch loader
-        preprocess_fn (Callable): function to be applied to the x sample
+        preprocess_fn (Optional[Callable], optional): function to be applied to the x sample
+        perc_rec (Optional[float], optional): percentage of the recurrent neurons to be used.
+            If None, all the recurrent neurons are used. Defaults to None.
+        alpha (Optional[float], 1.0): use alpha recurrent neurons and (1-alpha)
+            random neurons over the fraction of all recurrent neurons given by `perc_rec`.
+            Defaults to 1.0.
+        device (Optional[str], optional): the device on which the function is executed.
+            If None, the function is executed on a CUDA device if available, on CPU
+            otherwise. Defaults to None.
 
     Returns:
         Tuple[Tensor, Tensor]: the matrices A of shape
@@ -185,6 +195,10 @@ def compute_ridge_matrices(
 
         y = y.to(device).float()
         batch_A, batch_B = (y.T @ x).cpu(), (x.T @ x).cpu()
+
+        if perc_rec is not None:
+            batch_A, batch_B = mask_ab(batch_A, batch_B, perc_rec, alpha)
+
         A, B = (A + batch_A, B + batch_B) if A is not None else (batch_A, batch_B)
 
     return A, B
@@ -212,3 +226,56 @@ def solve_ab_decomposition(
     B = B + torch.eye(B.shape[0]).to(B) * l2 if l2 else B
 
     return A @ B.pinverse()
+
+
+@torch.no_grad()
+def mask_ab(
+    A: Tensor, B: Tensor, perc_rec: float, alpha: float
+) -> Tuple[Tensor, Tensor]:
+    """
+    Masks the matrices A and B according to the percentage of recurrent neurons to be used.
+    The `perc_rec` percentage of the most important recurrent neurons are used, where the
+    importance is measured by the sum of the squares of the columns of B.
+
+    Args:
+        A (Tensor): YS^T
+        B (Tensor): SS^T
+        perc_rec (float): percentage of the recurrent neurons to be used.
+        alpha (float): fraction of most important recurrent
+            neurons to be used over the `perc` percentage.
+            If alpha=1, only importance recurrent neurons are considered.
+
+    Returns:
+        Tuple[Tensor, Tensor]: the masked matrices A and B.
+
+    Raises:
+        ValueError: if perc_rec or alpha are not in [0, 1]
+    """
+    if perc_rec < 0 or perc_rec > 1:
+        raise ValueError("perc_rec must be in [0, 1]")
+    if alpha < 0 or alpha > 1:
+        raise ValueError("alpha must be in [0, 1]")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # number of recurrent neurons to be considered
+    n = int(perc_rec * B.size(0))
+    # fraction of top-k and random neurons
+    k, k_rand = int(round(alpha * n)), int((1 - alpha) * n)
+    imp = torch.sum(B**2, axis=1)
+    all_idxs = list(range(imp.size(0)))
+    _, topk_idxs = torch.topk(imp, k)
+    rand_idxs = torch.tensor(list(set(all_idxs) - set(topk_idxs.tolist())))
+    randperm_idxs = torch.randperm(len(rand_idxs))
+    rand_idxs = rand_idxs[randperm_idxs][:k_rand]
+    chosen_idxs = torch.hstack((topk_idxs, rand_idxs))
+
+    mask = F.one_hot(chosen_idxs, B.size(0)).sum(0).view(1, -1)
+    mask_A, A = mask.repeat(A.size(0), 1).to(device), A.to(device)
+    masked_A = (A * mask_A).cpu()
+
+    mask_B = mask.T @ mask
+    mask_B, B = mask_B.to(device), B.to(device)
+    masked_B = (B * mask_B).cpu()
+
+    return masked_A, masked_B

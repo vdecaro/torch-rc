@@ -11,7 +11,6 @@ from torch_esn.model.reservoir import Reservoir
 
 class VanillaESNWrapper(ESNWrapper):
     def __init__(self, dataset: str, users: List[str], batch_size: int) -> None:
-
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.batch_size = batch_size
 
@@ -40,6 +39,8 @@ class VanillaESNWrapper(ESNWrapper):
         self,
         reservoir: Reservoir,
         l2: Optional[List[float]] = None,
+        perc_rec: Optional[float] = None,
+        alpha: Optional[float] = 1.0,
         prev_A: Optional[torch.Tensor] = None,
         prev_B: Optional[torch.Tensor] = None,
         with_readout: bool = True,
@@ -49,6 +50,8 @@ class VanillaESNWrapper(ESNWrapper):
             self.get_loader(),
             reservoir,
             l2=l2,
+            perc_rec=perc_rec,
+            alpha=alpha,
             prev_A=prev_A,
             prev_B=prev_B,
             with_readout=with_readout,
@@ -62,7 +65,6 @@ class VanillaESNWrapper(ESNWrapper):
         sigma: float,
         device: Optional[str] = None,
     ) -> Tuple[float, int]:
-
         return super().test_likelihood(
             loader=self.get_loader(),
             reservoir=reservoir,
@@ -77,7 +79,6 @@ class VanillaESNWrapper(ESNWrapper):
         reservoir: Reservoir,
         device: Optional[str] = None,
     ) -> Tuple[float, int]:
-
         return super().test_accuracy(
             loader=self.get_loader(),
             readout=readout,

@@ -42,6 +42,8 @@ class ESNWrapper(object):
         loader: DataLoader,
         reservoir: Reservoir,
         l2: Optional[List[float]] = None,
+        perc_rec: Optional[float] = None,
+        alpha: Optional[float] = 1.0,
         prev_A: Optional[torch.Tensor] = None,
         prev_B: Optional[torch.Tensor] = None,
         with_readout: bool = True,
@@ -50,7 +52,9 @@ class ESNWrapper(object):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         reservoir = reservoir.to(device).eval()
-        A, B = compute_ridge_matrices(loader, reservoir, device=device)
+        A, B = compute_ridge_matrices(
+            loader, reservoir, perc_rec=perc_rec, alpha=alpha, device=device
+        )
         if prev_A is not None:
             A += prev_A
             B += prev_B
@@ -70,7 +74,6 @@ class ESNWrapper(object):
         sigma: float,
         device: Optional[str] = None,
     ) -> Tuple[float, int]:
-
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         reservoir = reservoir.to(device).eval()
@@ -89,7 +92,6 @@ class ESNWrapper(object):
         reservoir: Reservoir,
         device: Optional[str] = None,
     ) -> Tuple[float, int]:
-
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
