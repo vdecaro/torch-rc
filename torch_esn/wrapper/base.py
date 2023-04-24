@@ -6,6 +6,7 @@ from torch_esn.optimization.ridge_regression import (
     compute_ridge_matrices,
     solve_ab_decomposition,
     validate_readout,
+    compress_ridge_matrices,
 )
 
 from typing import List, Optional, Tuple, Union
@@ -42,7 +43,7 @@ class ESNWrapper(object):
         loader: DataLoader,
         reservoir: Reservoir,
         l2: Optional[List[float]] = None,
-        perc_rec: Optional[float] = None,
+        perc_rec: Optional[float] = 1.0,
         alpha: Optional[float] = 1.0,
         prev_A: Optional[torch.Tensor] = None,
         prev_B: Optional[torch.Tensor] = None,
@@ -55,6 +56,8 @@ class ESNWrapper(object):
         A, B = compute_ridge_matrices(
             loader, reservoir, perc_rec=perc_rec, alpha=alpha, device=device
         )
+        if perc_rec < 1.0:
+            A, B = compress_ridge_matrices(A, B, perc_rec, alpha)
         if prev_A is not None:
             A += prev_A
             B += prev_B

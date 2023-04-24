@@ -39,7 +39,7 @@ class VanillaESNWrapper(ESNWrapper):
         self,
         reservoir: Reservoir,
         l2: Optional[List[float]] = None,
-        perc_rec: Optional[float] = None,
+        perc_rec: Optional[float] = 1.0,
         alpha: Optional[float] = 1.0,
         prev_A: Optional[torch.Tensor] = None,
         prev_B: Optional[torch.Tensor] = None,

@@ -14,6 +14,7 @@ def fit_and_validate_readout(
     l2_values: List[float],
     score_fn: Callable[[Tensor, Tensor], float],
     mode: Literal["min", "max"],
+    weights: Optional[List[float]] = None,
     preprocess_fn: Optional[Callable] = None,
     device: Optional[str] = None,
 ) -> Tuple[Tensor, Tensor]:
@@ -30,6 +31,8 @@ def fit_and_validate_readout(
             metric.
         mode (Literal[&#39;min&#39;, &#39;max&#39;]): whether the best result is the
             minimum or the maximum given the metric.
+        weights (Optional[List[float]], optional): list of weights to be applied to each
+            sample in the batch. Defaults to None.
         preprocess_fn (Optional[Callable], optional): a transformation to be applied to
             X before the linear transformation. Useful whenever this function is called
             to learn a Readout of a ESN. Defaults to None.
@@ -45,7 +48,7 @@ def fit_and_validate_readout(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Training
-    all_W = fit_readout(train_loader, preprocess_fn, l2_values, device)
+    all_W = fit_readout(train_loader, preprocess_fn, l2_values, weights, device)
     if not isinstance(all_W, List):
         all_W = [all_W]
 
@@ -64,6 +67,7 @@ def fit_readout(
     train_loader: torch.utils.data.DataLoader,
     preprocess_fn: Optional[Callable] = None,
     l2: Optional[Union[float, List[float]]] = None,
+    weights: Optional[List[float]] = None,
     device: Optional[str] = "cpu",
 ) -> Tuple[Tensor, Tensor]:
     """Applies the ridge regression on the training data with all the given l2 values
@@ -71,10 +75,12 @@ def fit_readout(
 
     Args:
         train_loader (DataLoader): DataLoader of the training data.
-        l2_values (List[float]): List of all the candidate L2 values.
         preprocess_fn (Optional[Callable], optional): a transformation to be applied to
             X before the linear transformation. Useful whenever this function is called
             to learn a Readout of a ESN. Defaults to None.
+        l2_values (List[float]): List of all the candidate L2 values.
+        weights (Optional[List[float]], optional): list of weights to be applied to each
+            sample in the batch. Defaults to None.
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
@@ -83,7 +89,7 @@ def fit_readout(
         Tuple[Tensor, float, float]: a Tuple containing the best linear matrix, the
             corrisponding l2 value and the metric value.
     """
-    A, B = compute_ridge_matrices(train_loader, preprocess_fn, device)
+    A, B = compute_ridge_matrices(train_loader, preprocess_fn, weights, device)
     if isinstance(l2, List):
         return [solve_ab_decomposition(A, B, curr_l2, device) for curr_l2 in l2]
     else:
@@ -153,8 +159,7 @@ def validate_readout(
 def compute_ridge_matrices(
     loader: DataLoader,
     preprocess_fn: Optional[Callable] = None,
-    perc_rec: Optional[float] = None,
-    alpha: Optional[float] = 1.0,
+    weights: Optional[List[float]] = None,
     device: Optional[str] = None,
 ) -> Tuple[Tensor, Tensor]:
     """
@@ -165,11 +170,9 @@ def compute_ridge_matrices(
     Args:
         loader (DataLoader): torch loader
         preprocess_fn (Optional[Callable], optional): function to be applied to the x sample
-        perc_rec (Optional[float], optional): percentage of the recurrent neurons to be used.
-            If None, all the recurrent neurons are used. Defaults to None.
-        alpha (Optional[float], 1.0): use alpha recurrent neurons and (1-alpha)
-            random neurons over the fraction of all recurrent neurons given by `perc_rec`.
-            Defaults to 1.0.
+            before computing the matrices. Defaults to None.
+        weights (Optional[List[float]], optional): list of weights to be applied to each
+            sample in the batch. Defaults to None.
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
@@ -181,6 +184,9 @@ def compute_ridge_matrices(
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if weights is not None:
+        weights = torch.tensor(weights).to(device)
 
     A, B = None, None
     for x, y in loader:
@@ -196,8 +202,11 @@ def compute_ridge_matrices(
         y = y.to(device).float()
         batch_A, batch_B = (y.T @ x).cpu(), (x.T @ x).cpu()
 
-        if perc_rec is not None:
-            batch_A, batch_B = mask_ab(batch_A, batch_B, perc_rec, alpha)
+        if weights is not None:
+            curr_w = weights[y.long()[:, 0]]
+            batch_A, batch_B = ((y.T * curr_w) @ x).cpu(), ((x.T * curr_w) @ x).cpu()
+        else:
+            batch_A, batch_B = (y.T @ x).cpu(), (x.T @ x).cpu()
 
         A, B = (A + batch_A, B + batch_B) if A is not None else (batch_A, batch_B)
 
@@ -229,7 +238,7 @@ def solve_ab_decomposition(
 
 
 @torch.no_grad()
-def mask_ab(
+def compress_ridge_matrices(
     A: Tensor, B: Tensor, perc_rec: float, alpha: float
 ) -> Tuple[Tensor, Tensor]:
     """
@@ -240,10 +249,11 @@ def mask_ab(
     Args:
         A (Tensor): YS^T
         B (Tensor): SS^T
-        perc_rec (float): percentage of the recurrent neurons to be used.
-        alpha (float): fraction of most important recurrent
-            neurons to be used over the `perc` percentage.
-            If alpha=1, only importance recurrent neurons are considered.
+        perc_rec (Optional[float], optional): percentage of the recurrent neurons to be used.
+            If None, all the recurrent neurons are used. Defaults to None.
+        alpha (Optional[float], 1.0): use alpha recurrent neurons based on importance and (1-alpha)
+            random neurons over the fraction of all recurrent neurons given by `perc_rec`.
+            Defaults to 1.0.
 
     Returns:
         Tuple[Tensor, Tensor]: the masked matrices A and B.
@@ -262,12 +272,22 @@ def mask_ab(
     n = int(perc_rec * B.size(0))
     # fraction of top-k and random neurons
     k, k_rand = int(round(alpha * n)), int((1 - alpha) * n)
-    imp = torch.sum(B**2, axis=1)
-    all_idxs = list(range(imp.size(0)))
-    _, topk_idxs = torch.topk(imp, k)
-    rand_idxs = torch.tensor(list(set(all_idxs) - set(topk_idxs.tolist())))
-    randperm_idxs = torch.randperm(len(rand_idxs))
-    rand_idxs = rand_idxs[randperm_idxs][:k_rand]
+
+    if alpha > 0:
+        # compute the importance of each column of B
+        imp = torch.sum(B**2, axis=1)
+        all_idxs = list(range(imp.size(0)))
+        _, topk_idxs = torch.topk(imp, k)
+    else:
+        topk_idxs = torch.tensor([])
+
+    if alpha < 1:
+        rand_idxs = torch.tensor(list(set(all_idxs) - set(topk_idxs.tolist())))
+        randperm_idxs = torch.randperm(len(rand_idxs))
+        rand_idxs = rand_idxs[randperm_idxs][:k_rand]
+    else:
+        rand_idxs = torch.tensor([])
+
     chosen_idxs = torch.hstack((topk_idxs, rand_idxs))
 
     mask = F.one_hot(chosen_idxs, B.size(0)).sum(0).view(1, -1)
