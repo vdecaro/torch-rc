@@ -53,9 +53,7 @@ class ESNWrapper(object):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         reservoir = reservoir.to(device).eval()
-        A, B = compute_ridge_matrices(
-            loader, reservoir, perc_rec=perc_rec, alpha=alpha, device=device
-        )
+        A, B = compute_ridge_matrices(loader, reservoir, device=device)
         if perc_rec < 1.0:
             A, B = compress_ridge_matrices(A, B, perc_rec, alpha)
         if prev_A is not None:

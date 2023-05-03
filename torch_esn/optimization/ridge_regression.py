@@ -271,12 +271,12 @@ def compress_ridge_matrices(
     # number of recurrent neurons to be considered
     n = int(perc_rec * B.size(0))
     # fraction of top-k and random neurons
+    all_idxs = list(range(B.size(0)))
     k, k_rand = int(round(alpha * n)), int((1 - alpha) * n)
 
     if alpha > 0:
         # compute the importance of each column of B
         imp = torch.sum(B**2, axis=1)
-        all_idxs = list(range(imp.size(0)))
         _, topk_idxs = torch.topk(imp, k)
     else:
         topk_idxs = torch.tensor([])
@@ -288,14 +288,10 @@ def compress_ridge_matrices(
     else:
         rand_idxs = torch.tensor([])
 
-    chosen_idxs = torch.hstack((topk_idxs, rand_idxs))
+    chosen_idxs = torch.hstack((topk_idxs, rand_idxs)).long()
+    mask = F.one_hot(chosen_idxs, B.size(0)).sum(0).unsqueeze(0)
 
-    mask = F.one_hot(chosen_idxs, B.size(0)).sum(0).view(1, -1)
-    mask_A, A = mask.repeat(A.size(0), 1).to(device), A.to(device)
-    masked_A = (A * mask_A).cpu()
-
-    mask_B = mask.T @ mask
-    mask_B, B = mask_B.to(device), B.to(device)
-    masked_B = (B * mask_B).cpu()
+    masked_A = A * mask
+    masked_B = (mask.T @ mask) * B
 
     return masked_A, masked_B
