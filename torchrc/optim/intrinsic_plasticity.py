@@ -2,14 +2,21 @@ import torch
 import torch.nn.functional as F
 
 from torch import Tensor
-from typing import Callable, Optional
-from types import MethodType
+from typing import Callable, Generator, Optional
 
-from ..model.reservoir import Reservoir
+from torchrc.models.esn import Reservoir
 
 
 class IntrinsicPlasticity:
     def __init__(self, learning_rate: float, mu: float, sigma: float) -> None:
+        """Intrinsic Plasticity optimizer.
+
+        Args:
+            learning_rate (float): learning rate.
+            mu (float): mean of the normal distribution.
+            sigma (float): standard deviation of the normal distribution.
+        """
+
         self._lr: float = learning_rate
         self.mu: float = mu
         self.v: float = sigma**2
@@ -21,7 +28,7 @@ class IntrinsicPlasticity:
 
         self._tmp_in_signal, self._tmp_h, self._tmp_mask = None, None, None
 
-    def step(self) -> None:
+    def step(self):
         self._reservoir.net_a.grad = F.normalize(self._reservoir.net_a.grad, dim=0)
         self._reservoir.net_b.grad = F.normalize(self._reservoir.net_b.grad, dim=0)
         self._opt.step()
@@ -64,12 +71,12 @@ class IntrinsicPlasticity:
             self._reservoir = None
             self.compiled = False
 
-    def _ip_state_comp(self) -> Callable:
+    def _ip_state_comp(self) -> Callable[..., Generator]:
         def _state_comp(
             input: Tensor,
             initial_state: Tensor,
             mask: Optional[Tensor] = None,
-        ) -> None:
+        ) -> Generator:
             res = self._reservoir
             timesteps, in_signal, h, state = input.shape[0], [], [], initial_state
             for t in range(timesteps):

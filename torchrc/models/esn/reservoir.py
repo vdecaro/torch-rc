@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import Tensor, Size
 from torch.nn import Module, Parameter
 
-from . import initializers
+from ...utils import initializers
 
 
 class Reservoir(Module):
