@@ -40,5 +40,5 @@ class SequentialMNIST(MNIST):
                 )
             ].view(img.size())
 
-        img = img.view(-1)
+        img = img.view(-1).unsqueeze(-1)
         return img, target
