@@ -10,7 +10,7 @@ def seq_collate_fn(scenario: str = "stationary"):
             for x_i, y_i in batch:
                 x.append(x_i)
                 y.append(y_i)
-
+            print(x, y, len(x), len(y), x[0].shape, y[0].shape)
             return torch.stack(x, dim=1), torch.stack(y, dim=1)
 
     elif scenario == "continual":

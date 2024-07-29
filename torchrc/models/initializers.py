@@ -1,6 +1,8 @@
 from typing import Callable, List, Literal, Optional, Tuple, Union
 
 import torch
+import scipy.sparse
+import numpy as np
 
 
 def get_initializer(
@@ -179,70 +181,79 @@ def zeros(shape: torch.Size) -> torch.Tensor:
     return torch.zeros(shape)
 
 
+def sparse(
+    shape: torch.Size,
+    density: float = 0.01,
+    values_sampler: Optional[Callable[..., np.ndarray]] = None,
+    seed: Optional[int] = None,
+) -> torch.Tensor:
+    """
+    Sparse random tensor.
+
+    Args:
+        shape (torch.Size): shape of the tensor.
+
+    Returns:
+        torch.Tensor: initialized sparse random tensor.
+    """
+    # use scipy.sparse.random to generate sparse random matrix
+    if values_sampler is None:
+        values_sampler = lambda x: np.random.uniform(low=-1.0, high=1.0, size=x)
+    sparse_mat = scipy.sparse.random(
+        shape[0],
+        shape[1],
+        density=density,
+        data_rvs=values_sampler,
+        random_state=seed,
+    ).toarray()
+    np.fill_diagonal(sparse_mat, 0)
+    return torch.tensor(sparse_mat).float()
+
+
 def block_diagonal(
     blocks: List[torch.Tensor],
-    correlations: Optional[List[Tuple[int, int, torch.Tensor]]] = None,
-    antisymmetric_corrs: bool = False,
-    decompose: bool = False,
+    couplings: Optional[List[Tuple[int, int, torch.Tensor]]] = None,
 ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """
     Create a block diagonal matrix from a list of matrices.
 
     Args:
         blocks (torch.Tensor): list of matrices.
-        correlations (Optional[List[Tuple[int, int, torch.Tensor]]], optional): list of
-            blocks correlating blocks in the diagonal. Defaults to None.
-        antisymmetric_corrs (bool, optional): whether to use antisymmetric correlations.
+        couplings (Optional[List[Tuple[int, int, torch.Tensor]]], optional): list of
+            blocks coupling blocks in the diagonal. Defaults to None.
 
     Returns:
         torch.Tensor: block diagonal matrix.
     """
-    n_blocks = len(blocks)
-    n_units = blocks[0].shape[0]
-    n_total = n_units * n_blocks
-
-    def _check_block(block: torch.Tensor, is_corr: bool = False):
-        to_print = "Correlation matrix" if is_corr else "Block matrix"
-        if block.ndim != 2:
-            raise ValueError("Block is not a matrix.")
-        if block.shape[0] != block.shape[1]:
-            raise ValueError("Block is not square.")
-        if block.shape[0] != n_units:
-            raise ValueError(
-                f"{to_print} has the wrong size. Expected {n_units}, got {block.shape[0]}."
-            )
-
-    for i, block in enumerate(blocks):
-        _check_block(block)
+    n_total = sum([b.shape[0] for b in blocks])
 
     mat = torch.zeros(n_total, n_total)
+    n_units = blocks[0].shape[0]
     for i, block in enumerate(blocks):
-        mat[i * n_units : (i + 1) * n_units, i * n_units : (i + 1) * n_units] = block
+        curr_units = block.shape[0]
+        extent = n_units + curr_units
+        mat[n_units:extent, n_units:extent] = block
 
-    if correlations is not None:
-        if not decompose:
-            for i, j, corr in correlations:
-                _check_block(corr)
+    if couplings is not None:
+        margin_x, margin_y = [0], [blocks[0].shape[0]]
+        for i in range(1, len(blocks)):
+            margin_x.append(margin_x[-1] + blocks[i - 1].shape[0])
+            margin_y.append(margin_y[-1] + blocks[i].shape[0])
+        couple_mat = torch.zeros(n_total, n_total)
+        for i, j, corr in couplings:
+            if i == j:
+                raise ValueError(
+                    f"Coupling blocks must couple different diagonal blocks. Found repeated {i}."
+                )
 
-                mat[
-                    i * n_units : (i + 1) * n_units, j * n_units : (j + 1) * n_units
-                ] = corr
-                mat[
-                    j * n_units : (j + 1) * n_units, i * n_units : (i + 1) * n_units
-                ] = (corr.T if not antisymmetric_corrs else -corr.T)
-            return mat
-        else:
-            corr_mat = torch.zeros(n_total, n_total)
-            for i, j, corr in correlations:
-                _check_block(corr)
+            if i > j:
+                i, j = j, i
+                corr = corr.T
 
-                corr_mat[
-                    i * n_units : (i + 1) * n_units, j * n_units : (j + 1) * n_units
-                ] = corr
-                corr_mat[
-                    j * n_units : (j + 1) * n_units, i * n_units : (i + 1) * n_units
-                ] = (corr.T if not antisymmetric_corrs else -corr.T)
-            return mat, corr_mat
+            couple_mat[margin_x[i] : margin_x[i + 1], margin_y[j - 1] : margin_y[j]] = (
+                corr
+            )
+        return mat, couple_mat
 
 
 __all__ = ["uniform", "normal", "ring", "orthogonal", "ones", "zeros", "block_diagonal"]

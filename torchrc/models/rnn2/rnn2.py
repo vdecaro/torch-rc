@@ -1,8 +1,10 @@
-from typing import Callable, Literal, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
+import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
 
-from torchrc.utils.initializers import block_diagonal
+from torchrc.models.initializers import block_diagonal
 
 
 class RNN2Layer(nn.Module):
@@ -10,20 +12,12 @@ class RNN2Layer(nn.Module):
     def __init__(
         self,
         input_size: int,
-        block_size: int,
-        n_blocks: int,
+        block_sizes: List[int],
+        coupling_indices: List[Tuple[int, int]],
         block_init_fn: Callable[[torch.Size], torch.Tensor],
-        block_scaling: Optional[
-            Literal["spectral", "singular", "norm", "linear"]
-        ] = None,
-        block_scaling_value: Optional[float] = None,
-        corr_blocks_list: Optional[Tuple[int, int, torch.Tensor]] = None,
-        corr_block_init_fn: Optional[Callable[[torch.Size], torch.Tensor]] = None,
-        corr_block_scaling: Optional[
-            Literal["spectral", "singular", "norm", "linear"]
-        ] = None,
-        corr_block_scaling_value: Optional[float] = None,
-        antisymmetric_mixin: bool = True,
+        coupling_block_init_fn: Optional[Callable[[torch.Size], torch.Tensor]] = None,
+        eul_step: float = 1e-2,
+        activation: str = "tanh",
     ):
         """RNN2Layer.
         
@@ -37,43 +31,54 @@ class RNN2Layer(nn.Module):
                 the type of scaling for the blocks. Defaults to None.
             block_scaling_value (Optional[float], optional): the value for the scaling.\
                 Defaults to None.
-            corr_blocks_list (Optional[Tuple[int, int, torch.Tensor]], optional): the \
+            coupling_blocks_list (Optional[Tuple[int, int, torch.Tensor]], optional): the \
                 list of blocks correlating blocks in the diagonal. Defaults to None.
-            corr_block_init_fn (Optional[Callable[[torch.Size], torch.Tensor]], optional): \
+            coupling_block_init_fn (Optional[Callable[[torch.Size], torch.Tensor]], optional): \
                 the function to initialize the correlated blocks. Defaults to None.
-            corr_block_scaling (Optional[Literal["spectral", "singular", "norm", "linear"]], optional): \
+            coupling_block_scaling (Optional[Literal["spectral", "singular", "norm", "linear"]], optional): \
                 the type of scaling for the correlated blocks. Defaults to None.
-            corr_block_scaling_value (Optional[float], optional): \
+            coupling_block_scaling_value (Optional[float], optional): \
                 the value for the scaling of the correlated blocks. Defaults to None.
             antisymmetric_mixin (bool, optional): whether to use antisymmetric mixin \
                 between RNNs. Defaults to True.
+            eul_step (float, optional): the Euler step for the integration. Defaults to 1e-2.
         """
         super().__init__()
 
-        self._block_size = block_size
-        self._n_blocks = n_blocks
+        self._input_size = input_size
+        self._block_sizes = block_sizes
+        self._coupling_indices = coupling_indices
+        self._eul_step = eul_step
+        self._activation = activation
         self._block_init_fn = block_init_fn
-        self._block_scaling = block_scaling
-        self._block_scale_value = block_scaling_value
+        self._coupling_block_init_fn = coupling_block_init_fn
 
-        self._corr_blocks_list = corr_blocks_list
-        self._corr_block_init_fn = corr_block_init_fn
-        self._corr_block_scaling = corr_block_scaling
-        self._corr_block_scale_value = corr_block_scaling_value
-        self._antisymmetric_mixin = antisymmetric_mixin
-
-        blocks, mixin = block_diagonal(
-            [block_init_fn(block_size) for _ in range(n_blocks)],
-            [corr_block_init_fn(block_size) for _ in range(n_blocks)],
-            antisymmetric_mixin=antisymmetric_mixin,
-            decompose=True,
+        block_mat, coupling_mat = block_diagonal(
+            [block_init_fn((b_size, b_size)) for b_size in block_sizes],
+            [
+                (
+                    i,
+                    j,
+                    coupling_block_init_fn(
+                        (self._block_sizes[i], self._block_sizes[j])
+                    ),
+                )
+                for i, j in coupling_indices
+            ],
         )
 
         self._input_mat = nn.Parameter(
-            torch.empty(block_size * n_blocks, input_size), requires_grad=False
+            torch.normal(
+                mean=0,
+                std=1 / np.sqrt(self.hidden_size),
+                size=(self.hidden_size, self._input_size),
+            ),
+            requires_grad=False,
         )
-        self._blocks = nn.Parameter(blocks, requires_grad=False)
-        self._mixin = nn.Parameter(mixin)
+        self._blocks = nn.Parameter(block_mat, requires_grad=False)
+        self._couplings = nn.Parameter(coupling_mat)
+        self._couple_mask = self._couplings != 0
+        self._activ_fn = getattr(F, activation)
 
     @torch.no_grad()
     def forward(
@@ -83,18 +88,23 @@ class RNN2Layer(nn.Module):
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if initial_state is None:
-            initial_state = torch.zeros(self._block_size).to(self._blocks)
+            initial_state = torch.zeros(self.hidden_size).to(self._blocks)
 
         embeddings = []
         state = initial_state
         timesteps = input.shape[0]
         for t in range(timesteps):
-            state = (
+            couple_masked = self._couple_mask * self._couplings
+            state = state + self._eul_step * (
                 -state
-                + self._blocks @ torch.tanh(state)
-                + self._mixin @ state
+                + self._blocks @ self._activ_fn(state)
+                + (couple_masked - couple_masked.T) @ state
                 + self._input_mat @ input[t]
             )
             embeddings.append(state if mask is None else mask * state)
         embeddings = torch.stack(embeddings, dim=0)
         return embeddings
+
+    @property
+    def hidden_size(self) -> int:
+        return sum(self._block_sizes)

@@ -26,11 +26,7 @@ class SequentialMNIST(MNIST):
             permute_seed (Optional[int], optional): seed for permutation. Defaults to None.
         """
         if transform is None:
-            transform = transforms.Compose(
-                [
-                    transforms.ToTensor(),
-                ]
-            )
+            transform = transforms.Compose([transforms.ToTensor()])
         super().__init__(root, train, transform, target_transform, download)
         self.permute_seed = permute_seed
 
@@ -43,4 +39,6 @@ class SequentialMNIST(MNIST):
                     generator=torch.Generator().manual_seed(self.permute_seed),
                 )
             ].view(img.size())
+
+        img = img.view(-1)
         return img, target
