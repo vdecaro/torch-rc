@@ -12,6 +12,7 @@ class RNN2Layer(nn.Module):
     def __init__(
         self,
         input_size: int,
+        out_size: int,
         block_sizes: List[int],
         coupling_indices: List[Tuple[int, int]],
         block_init_fn: Callable[[torch.Size], torch.Tensor],
@@ -71,16 +72,29 @@ class RNN2Layer(nn.Module):
             torch.normal(
                 mean=0,
                 std=1 / np.sqrt(self.hidden_size),
-                size=(self.hidden_size, self._input_size),
+                size=(self._input_size, self.hidden_size),
             ),
-            requires_grad=False,
+            requires_grad=True,
         )
-        self._blocks = nn.Parameter(block_mat, requires_grad=False)
+
+        self._blocks = nn.Parameter(block_mat, requires_grad=True)
+        self._bh = nn.Parameter(
+            torch.normal(
+                mean=0, std=1 / np.sqrt(self.hidden_size), size=(self.hidden_size,)
+            ),
+            requires_grad=True,
+        )
         self._couplings = nn.Parameter(coupling_mat)
         self._couple_mask = self._couplings != 0
         self._activ_fn = getattr(F, activation)
+        self._out_mat = nn.Parameter(
+            torch.normal(
+                mean=0,
+                std=1 / np.sqrt(self.hidden_size),
+                size=(self.hidden_size, out_size),
+            ),
+        )
 
-    @torch.no_grad()
     def forward(
         self,
         input: torch.Tensor,
@@ -97,13 +111,14 @@ class RNN2Layer(nn.Module):
             couple_masked = self._couple_mask * self._couplings
             state = state + self._eul_step * (
                 -state
-                + self._blocks @ self._activ_fn(state)
-                + (couple_masked - couple_masked.T) @ state
-                + self._input_mat @ input[t]
+                + self._activ_fn(state) @ self._blocks
+                + state @ (couple_masked - couple_masked.T)
+                + input[t] @ self._input_mat
             )
             embeddings.append(state if mask is None else mask * state)
         embeddings = torch.stack(embeddings, dim=0)
-        return embeddings
+        output = embeddings @ self._out_mat
+        return output, embeddings
 
     @property
     def hidden_size(self) -> int:
