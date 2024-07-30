@@ -85,7 +85,7 @@ def train():
     test_accs = []
     train_losses = []
     epochs_list = []  # just grabbing numbers for the sake of dataframe
-    train_loader, val_loader, _ = load_mnist()
+    train_loader, val_loader, test_loader = load_mnist()
     # Train for some epochs
     for epoch in tqdm(range(EPOCHS), total=EPOCHS):
         rnn.train()
@@ -116,7 +116,7 @@ def train():
         with torch.no_grad():
             total = 0
             correct = 0
-            for x, y in val_loader:
+            for x, y in test_loader:
                 x = x.cuda()  # adding here too
                 y = y.cuda()
                 pred, _ = rnn(x)
