@@ -52,8 +52,6 @@ class RNN2Layer(nn.Module):
         self._coupling_indices = coupling_indices
         self._eul_step = eul_step
         self._activation = activation
-        self._block_init_fn = block_init_fn
-        self._coupling_block_init_fn = coupling_block_init_fn
 
         block_mat, coupling_mat = block_diagonal(
             [block_init_fn((b_size, b_size)) for b_size in block_sizes],
@@ -77,8 +75,7 @@ class RNN2Layer(nn.Module):
             ),
             requires_grad=True,
         )
-
-        self._blocks = nn.Parameter(block_mat, requires_grad=True)
+        self._blocks = nn.Parameter(block_mat)
         self._bh = nn.Parameter(
             torch.normal(
                 mean=0, std=1 / np.sqrt(self.hidden_size), size=(self.hidden_size,)
@@ -87,7 +84,6 @@ class RNN2Layer(nn.Module):
         )
         self._couplings = nn.Parameter(coupling_mat)
         self._couple_mask = nn.Parameter(self._couplings != 0, requires_grad=False)
-        self._activ_fn = getattr(F, activation)
         self._out_mat = nn.Parameter(
             torch.normal(
                 mean=0,
@@ -108,19 +104,20 @@ class RNN2Layer(nn.Module):
         embeddings = []
         state = initial_state
         timesteps = input.shape[0]
+        activ_fn = getattr(F, self._activation)
         for t in range(timesteps):
             couple_masked = self._couple_mask * self._couplings
             if self._fake:
                 state = state + self._eul_step * (
                     -state
-                    + self._activ_fn(+state @ self._blocks + input[t] @ self._input_mat)
+                    + activ_fn(+state @ self._blocks + input[t] @ self._input_mat)
                     + state @ (couple_masked - couple_masked.T)
                 )
             else:
 
                 state = state + self._eul_step * (
                     -state
-                    + self._activ_fn(state) @ self._blocks
+                    + activ_fn(state) @ self._blocks
                     + state @ (couple_masked - couple_masked.T)
                     + input[t] @ self._input_mat
                 )
