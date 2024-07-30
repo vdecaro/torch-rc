@@ -85,7 +85,7 @@ class RNN2Layer(nn.Module):
             requires_grad=True,
         )
         self._couplings = nn.Parameter(coupling_mat)
-        self._couple_mask = self._couplings != 0
+        self._couple_mask = nn.Parameter(self._couplings != 0, requires_grad=False)
         self._activ_fn = getattr(F, activation)
         self._out_mat = nn.Parameter(
             torch.normal(
