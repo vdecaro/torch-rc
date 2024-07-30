@@ -35,7 +35,7 @@ LAST_EPOCH = 100
 LR_SCALAR = 0.1
 LR_DECAY_EPOCHS = [140, 190]
 WEIGHT_DECAY = 1e-5
-TRAIN_BS = 64
+TRAIN_BS = 128
 TEST_BS = 1024
 
 output_root = "./results"
@@ -137,12 +137,12 @@ def train():
         # save model for every epoch as storage space required is quite small, can have training disruptions with colab
         model_path = os.path.join(
             output_root,
-            "rnn2-mnist-epoch" + str(epoch + 1) + ".pt",
+            f"rnn2-{FAKE}-mnist-epoch" + str(epoch + 1) + ".pt",
         )  # end of epoch so label +1
         torch.save(rnn, model_path)  # would use torch.jit.load to reload in the future
 
         # save stats so far, will overwrite every time as rows are added to dataframe
-        stats_path = os.path.join(output_root, "rnn2-mnist-stats.csv")
+        stats_path = os.path.join(output_root, f"rnn2-{FAKE}-mnist-stats.csv")
         cur_stats = pd.DataFrame()
         cur_stats["epoch"] = epochs_list
         cur_stats["loss"] = train_losses
