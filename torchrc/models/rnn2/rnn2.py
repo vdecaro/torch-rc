@@ -19,6 +19,7 @@ class RNN2Layer(nn.Module):
         coupling_block_init_fn: Optional[Callable[[torch.Size], torch.Tensor]] = None,
         eul_step: float = 1e-2,
         activation: str = "tanh",
+        fake: bool = False,
     ):
         """RNN2Layer.
         
@@ -45,7 +46,7 @@ class RNN2Layer(nn.Module):
             eul_step (float, optional): the Euler step for the integration. Defaults to 1e-2.
         """
         super().__init__()
-
+        self._fake = fake
         self._input_size = input_size
         self._block_sizes = block_sizes
         self._coupling_indices = coupling_indices
@@ -109,12 +110,20 @@ class RNN2Layer(nn.Module):
         timesteps = input.shape[0]
         for t in range(timesteps):
             couple_masked = self._couple_mask * self._couplings
-            state = state + self._eul_step * (
-                -state
-                + self._activ_fn(state) @ self._blocks
-                + state @ (couple_masked - couple_masked.T)
-                + input[t] @ self._input_mat
-            )
+            if self._fake:
+                state = state + self._eul_step * (
+                    -state
+                    + self._activ_fn(+state @ self._blocks + input[t] @ self._input_mat)
+                    + state @ (couple_masked - couple_masked.T)
+                )
+            else:
+
+                state = state + self._eul_step * (
+                    -state
+                    + self._activ_fn(state) @ self._blocks
+                    + state @ (couple_masked - couple_masked.T)
+                    + input[t] @ self._input_mat
+                )
             embeddings.append(state if mask is None else mask * state)
         embeddings = torch.stack(embeddings, dim=0)
         output = embeddings @ self._out_mat
