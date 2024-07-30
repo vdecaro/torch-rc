@@ -105,12 +105,12 @@ class RNN2Layer(nn.Module):
         state = initial_state
         timesteps = input.shape[0]
         activ_fn = getattr(F, self._activation)
+        couple_masked = self._couple_mask * self._couplings
         for t in range(timesteps):
-            couple_masked = self._couple_mask * self._couplings
             if self._fake:
                 state = state + self._eul_step * (
                     -state
-                    + activ_fn(+state @ self._blocks + input[t] @ self._input_mat)
+                    + activ_fn(state @ self._blocks + input[t] @ self._input_mat)
                     + state @ (couple_masked - couple_masked.T)
                 )
             else:
