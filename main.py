@@ -3,12 +3,13 @@ import random
 import numpy as np
 import pandas as pd
 import torch
+import sys
 from torch import nn
 from torchrc.data.utils.seq_loader import seq_collate_fn
 from torchrc.models.rnn2.rnn2 import RNN2Layer
 from torchrc.models.initializers import sparse, orthogonal
 from torch.optim import Adam
-from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim.lr_scheduler import MultiStepLR
 
 from torchrc.data.datasets.seq_mnist import SequentialMNIST
 from torch.utils.data import Subset
@@ -22,9 +23,9 @@ COUPLINGS = [(i, j) for i in range(16) for j in range(16) if i < j]
 random.shuffle(COUPLINGS)
 COUPLINGS = COUPLINGS[:20]
 EUL_STEP = 0.03
-
 BLOCK_INIT_FN = lambda x: sparse(x, RNN_DENSITY)
 COUPLE_INIT_FN = lambda x: orthogonal(x, 0.9)
+FAKE = int(sys.argv[-1]) == 1
 
 
 # Training params
@@ -32,6 +33,7 @@ EPOCHS = 200
 LR = 1e-3
 LAST_EPOCH = 100
 LR_SCALAR = 0.1
+LR_DECAY_EPOCHS = [140, 190]
 WEIGHT_DECAY = 1e-5
 TRAIN_BS = 64
 TEST_BS = 1024
@@ -62,6 +64,7 @@ def load_mnist():
 
 
 def train():
+    os.makedirs(output_root, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     rnn = RNN2Layer(
         input_size=1,
@@ -72,12 +75,13 @@ def train():
         coupling_block_init_fn=COUPLE_INIT_FN,
         eul_step=EUL_STEP,
         activation="relu",
+        fake=FAKE,
     )
     rnn.to(device)
     optim_params = list(rnn.parameters())
     criterion = nn.CrossEntropyLoss()
     optimizer = Adam(optim_params, lr=LR, weight_decay=WEIGHT_DECAY)
-    lr = ExponentialLR(optimizer, gamma=LR_SCALAR)
+    lr = MultiStepLR(optimizer, milestones=LR_DECAY_EPOCHS, gamma=LR_SCALAR)
     test_accs = []
     train_losses = []
     epochs_list = []  # just grabbing numbers for the sake of dataframe
@@ -86,7 +90,7 @@ def train():
     for epoch in tqdm(range(EPOCHS), total=EPOCHS):
         rnn.train()
         loss_epoch = []
-        for i, (x, y) in tqdm(enumerate(train_loader), total=len(train_loader)):
+        for _, (x, y) in tqdm(enumerate(train_loader), total=len(train_loader)):
             optimizer.zero_grad()
 
             # had to add these lines for colab GPU
@@ -135,7 +139,7 @@ def train():
             output_root,
             "rnn2-mnist-epoch" + str(epoch + 1) + ".pt",
         )  # end of epoch so label +1
-        rnn.save(model_path)  # would use torch.jit.load to reload in the future
+        torch.save(rnn, model_path)  # would use torch.jit.load to reload in the future
 
         # save stats so far, will overwrite every time as rows are added to dataframe
         stats_path = os.path.join(output_root, "rnn2-mnist-stats.csv")
