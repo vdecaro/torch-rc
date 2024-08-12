@@ -64,7 +64,7 @@ def fit_and_validate_readout(
 
 @torch.no_grad()
 def fit_readout(
-    train_loader: torch.utils.data.DataLoader,
+    train_loader: DataLoader,
     preprocess_fn: Optional[Callable] = None,
     l2: Optional[Union[float, List[float]]] = None,
     weights: Optional[List[float]] = None,
@@ -99,7 +99,7 @@ def fit_readout(
 @torch.no_grad()
 def validate_readout(
     readout: Union[torch.Tensor, List[torch.Tensor]],
-    eval_loader: torch.utils.data.DataLoader,
+    eval_loader: DataLoader,
     score_fn: Callable[[Tensor, Tensor], float],
     preprocess_fn: Optional[Callable] = None,
     device: Optional[str] = None,

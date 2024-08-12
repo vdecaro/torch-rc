@@ -33,7 +33,7 @@ class Reservoir(Module):
         self,
         input_size: int,
         hidden_size: int,
-        activation: str,
+        activation: str = "tanh",
         leakage: float = 1.0,
         input_scaling: float = 0.9,
         rho: float = 0.99,
