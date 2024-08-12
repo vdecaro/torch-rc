@@ -185,6 +185,7 @@ def sparse(
     shape: torch.Size,
     density: float = 0.01,
     values_sampler: Optional[Callable[..., np.ndarray]] = None,
+    enforce_cond: bool = False,
     seed: Optional[int] = None,
 ) -> torch.Tensor:
     """
@@ -199,14 +200,17 @@ def sparse(
     # use scipy.sparse.random to generate sparse random matrix
     if values_sampler is None:
         values_sampler = lambda x: np.random.uniform(low=-1.0, high=1.0, size=x)
-    sparse_mat = scipy.sparse.random(
-        shape[0],
-        shape[1],
-        density=density,
-        data_rvs=values_sampler,
-        random_state=seed,
-    ).toarray()
-    np.fill_diagonal(sparse_mat, 0)
+    while True:
+        sparse_mat = scipy.sparse.random(
+            shape[0],
+            shape[1],
+            density=density,
+            data_rvs=values_sampler,
+            random_state=seed,
+        ).toarray()
+        np.fill_diagonal(sparse_mat, 0)
+        if not enforce_cond or _check_cond(sparse_mat):
+            break
     return torch.tensor(sparse_mat).float()
 
 
@@ -254,6 +258,15 @@ def block_diagonal(
                 corr
             )
         return mat, couple_mat
+
+
+def _check_cond(W):
+    W_diag_only = np.diag(np.diag(W))
+    W_diag_pos_only = W_diag_only.copy()
+    W_diag_pos_only[W_diag_pos_only < 0] = 0.0
+    W_abs_cond = np.abs(W - W_diag_only) + W_diag_pos_only
+    max_eig_abs_cond = np.max(np.real(np.linalg.eigvals(W_abs_cond)))
+    return max_eig_abs_cond < 1
 
 
 __all__ = ["uniform", "normal", "ring", "orthogonal", "ones", "zeros", "block_diagonal"]

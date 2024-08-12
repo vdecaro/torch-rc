@@ -18,12 +18,12 @@ from tqdm import tqdm
 # RNN of RNNs params
 BLOCKS = [32 for _ in range(16)]
 HSIZE = sum(BLOCKS)
-RNN_DENSITY = 0.03
+RNN_DENSITY = 0.033
 COUPLINGS = [(i, j) for i in range(16) for j in range(16) if i < j]
 random.shuffle(COUPLINGS)
 COUPLINGS = COUPLINGS[:20]
 EUL_STEP = 0.03
-BLOCK_INIT_FN = lambda x: sparse(x, RNN_DENSITY)
+BLOCK_INIT_FN = lambda x: sparse(x, RNN_DENSITY, enforce_cond=True)
 COUPLE_INIT_FN = lambda x: orthogonal(x, 0.9)
 FAKE = int(sys.argv[-1]) == 1
 

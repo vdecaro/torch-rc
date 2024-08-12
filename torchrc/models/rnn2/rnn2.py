@@ -75,8 +75,7 @@ class RNN2Layer(nn.Module):
             ),
             requires_grad=True,
         )
-        self._blocks = nn.Parameter(block_mat)
-        self._blocks_mask = nn.Parameter(self._blocks != 0, requires_grad=False)
+        self._blocks = nn.Parameter(block_mat, requires_grad=False)
         self._bh = nn.Parameter(
             torch.normal(
                 mean=0, std=1 / np.sqrt(self.hidden_size), size=(self.hidden_size,)
@@ -107,19 +106,18 @@ class RNN2Layer(nn.Module):
         timesteps = input.shape[0]
         activ_fn = getattr(F, self._activation)
         couple_masked = self._couple_mask * self._couplings
-        blocks_masked = self._blocks_mask * self._blocks
         for t in range(timesteps):
             if self._fake:
                 state = state + self._eul_step * (
                     -state
-                    + activ_fn(state @ blocks_masked + input[t] @ self._input_mat)
+                    + activ_fn(state @ self._blocks + input[t] @ self._input_mat)
                     + state @ (couple_masked - couple_masked.T)
                 )
             else:
 
                 state = state + self._eul_step * (
                     -state
-                    + activ_fn(state) @ blocks_masked
+                    + activ_fn(state) @ self._blocks
                     + state @ (couple_masked - couple_masked.T)
                     + input[t] @ self._input_mat
                 )
