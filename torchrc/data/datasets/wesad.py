@@ -4,13 +4,6 @@ import torch.nn.functional as F
 
 from typing import Optional
 
-from . import DATA_PATH
-
-RAW_WESAD_PATH = os.path.join(DATA_PATH, "raw", "WESAD")
-WESAD_PATH = os.path.join(DATA_PATH, "processed", "WESAD")
-if not os.path.exists(WESAD_PATH):
-    os.makedirs(WESAD_PATH)
-
 
 class WESADDataset(torch.utils.data.Dataset):
 
@@ -44,18 +37,19 @@ class WESADDataset(torch.utils.data.Dataset):
     CONTEXTS = [0, 1, 2, 3, 4]
 
     def __init__(
-        self, user: str, context: int, seq_length: Optional[int] = 700
+        self, root: str, user: str, context: int, seq_length: Optional[int] = 700
     ) -> None:
         super().__init__()
         if user not in WESADDataset.USERS["all"]:
             raise ValueError(f"User {user} not found in WESAD dataset")
         if context not in WESADDataset.CONTEXTS:
             raise ValueError(f"Context {context} not found in WESAD dataset")
+        self.root = root
         self.user = user
         self.context = context
         self._seq_length = seq_length
 
-        self.path = os.path.join(WESAD_PATH, f"{self.user}.pkl")
+        self.path = os.path.join(self.processed_path, f"{self.user}.pkl")
         if not os.path.exists(self.path):
             self.preprocess()
         self.data = pickle.load(open(self.path, "rb"))
@@ -78,7 +72,7 @@ class WESADDataset(torch.utils.data.Dataset):
     def preprocess(self):
         print(f"Preprocessing user {self.user}...")
         with open(
-            os.path.join(RAW_WESAD_PATH, f"S{self.user}", f"S{self.user}.pkl"), "rb"
+            os.path.join(self.raw_path, f"S{self.user}", f"S{self.user}.pkl"), "rb"
         ) as f:
             data = pickle.load(f, encoding="latin1")
         X = np.concatenate(
@@ -129,6 +123,14 @@ class WESADDataset(torch.utils.data.Dataset):
         if self._seq_length is None or new_length != self._seq_length:
             self.features, self.targets = self._to_sequence_chunks(new_length)
             self._seq_length = new_length
+
+    @property
+    def raw_path(self):
+        return os.path.join(self.root, "raw", "WESAD")
+
+    @property
+    def processed_path(self):
+        return os.path.join(self.root, "processed", "WESAD")
 
 
 if __name__ == "__main__":

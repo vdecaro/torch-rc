@@ -181,6 +181,21 @@ def zeros(shape: torch.Size) -> torch.Tensor:
     return torch.zeros(shape)
 
 
+def diagonal(shape: int, min_val: float = -1, max_val: float = 1) -> torch.Tensor:
+    """
+    Diagonal random tensor.
+
+    Args:
+        shape (int): shape of the tensor.
+        min_val (float, optional): minimum value for uniform initialization. Defaults to -1.
+        max_val (float, optional): maximum value for uniform initialization. Defaults to 1.
+
+    Returns:
+        torch.Tensor: initialized tensor.
+    """
+    return torch.diag(torch.empty(shape).uniform_(min_val, max_val))
+
+
 def sparse(
     shape: torch.Size,
     density: float = 0.01,
@@ -212,8 +227,7 @@ def sparse(
 
 def block_diagonal(
     blocks: List[torch.Tensor],
-    couplings: Optional[List[Tuple[int, int, torch.Tensor]]] = None,
-) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+) -> torch.Tensor:
     """
     Create a block diagonal matrix from a list of matrices.
 
@@ -229,31 +243,57 @@ def block_diagonal(
 
     mat = torch.zeros(n_total, n_total)
     n_units = blocks[0].shape[0]
-    for i, block in enumerate(blocks):
+    for block in blocks:
         curr_units = block.shape[0]
         extent = n_units + curr_units
         mat[n_units:extent, n_units:extent] = block
+    return mat
 
-    if couplings is not None:
-        margin_x, margin_y = [0], [blocks[0].shape[0]]
-        for i in range(1, len(blocks)):
-            margin_x.append(margin_x[-1] + blocks[i - 1].shape[0])
-            margin_y.append(margin_y[-1] + blocks[i].shape[0])
-        couple_mat = torch.zeros(n_total, n_total)
-        for i, j, corr in couplings:
-            if i == j:
-                raise ValueError(
-                    f"Coupling blocks must couple different diagonal blocks. Found repeated {i}."
-                )
 
-            if i > j:
-                i, j = j, i
-                corr = corr.T
+def block_diagonal_coupling(
+    block_sizes: List[int], couplings: List[Tuple[int, int, torch.Tensor]]
+) -> torch.Tensor:
+    """Create the coupling matrix for a given block diagonal matrix.
 
-            couple_mat[margin_x[i] : margin_x[i + 1], margin_y[j - 1] : margin_y[j]] = (
-                corr
+    Args:
+        block_sizes (List[int]): list of block sizes.
+        couplings (List[Tuple[int, int, torch.Tensor]]): list of coupling blocks.
+
+    Returns:
+        torch.Tensor: coupling matrix
+    """
+
+    n_total = sum(block_sizes)
+    margin_x, margin_y = [0], [block_sizes[0]]
+    for i in range(1, len(block_sizes)):
+        margin_x.append(margin_x[-1] + block_sizes[i - 1])
+        margin_y.append(margin_y[-1] + block_sizes[i])
+
+    couple_mat = torch.zeros(n_total, n_total)
+    for i, j, corr in couplings:
+        if i == j:
+            raise ValueError(
+                f"Coupling blocks must couple different diagonal blocks. Found repeated {i}."
             )
-        return mat, couple_mat
+
+        if i > j:
+            i, j = j, i
+            corr = corr.T
+
+        couple_mat[margin_x[i] : margin_x[i + 1], margin_y[j - 1] : margin_y[j]] = corr
+    return couple_mat
 
 
-__all__ = ["uniform", "normal", "ring", "orthogonal", "ones", "zeros", "block_diagonal"]
+__all__ = [
+    "uniform",
+    "normal",
+    "ring",
+    "orthogonal",
+    "ones",
+    "zeros",
+    "block_diagonal",
+    "sparse",
+    "block_diagonal_coupling",
+    "get_initializer",
+    "rescale",
+]

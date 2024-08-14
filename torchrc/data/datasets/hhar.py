@@ -7,10 +7,6 @@ from scipy.stats import zscore
 
 from typing import Optional
 
-from . import DATA_PATH
-
-RAW_HHAR_PATH = os.path.join(DATA_PATH, "raw", "HHAR")
-HHAR_PATH = os.path.join(DATA_PATH, "processed", "HHAR")
 
 PHONES = ["nexus4", "s3", "s3mini"]  # , 'samsungold']
 WATCHES = ["gear", "lgwatch"]
@@ -42,7 +38,7 @@ class HHARDataset(torch.utils.data.Dataset):
     CONTEXTS = ["nexus4", "s3", "s3mini", "lgwatch"]
 
     def __init__(
-        self, user: str, context: int, seq_length: Optional[int] = 200
+        self, root: str, user: str, context: int, seq_length: Optional[int] = 200
     ) -> None:
         super().__init__()
         if user not in HHARDataset.USERS["all"]:
@@ -50,15 +46,16 @@ class HHARDataset(torch.utils.data.Dataset):
         if context < 0 or context >= len(HHARDataset.CONTEXTS):
             raise ValueError(f"Context {context} not found in HHAR dataset")
 
+        self.root = root
         self.user = user
         self.context = HHARDataset.CONTEXTS[context]
         self.freq = TARGET_FREQ
         self._seq_length = seq_length
 
-        self.path = os.path.join(HHAR_PATH, self.user, f"{self.context}.pkl")
+        self.path = os.path.join(self.processed_path, self.user, f"{self.context}.pkl")
 
         if not os.path.exists(self.path):
-            os.makedirs(os.path.join(HHAR_PATH, self.user), exist_ok=True)
+            os.makedirs(os.path.join(self.processed_path, self.user), exist_ok=True)
             self.preprocess()
 
         self.data = pickle.load(open(self.path, "rb"))
@@ -91,10 +88,10 @@ class HHARDataset(torch.utils.data.Dataset):
         else:
             acc_path, gyr_path = "Watch_accelerometer.csv", "Watch_gyroscope.csv"
         rdfs = {
-            "acc": pd.read_csv(os.path.join(RAW_HHAR_PATH, acc_path)).dropna(
+            "acc": pd.read_csv(os.path.join(self.raw_path, acc_path)).dropna(
                 subset=["gt"]
             ),
-            "gyr": pd.read_csv(os.path.join(RAW_HHAR_PATH, gyr_path)).dropna(
+            "gyr": pd.read_csv(os.path.join(self.raw_path, gyr_path)).dropna(
                 subset=["gt"]
             ),
         }
@@ -178,6 +175,14 @@ class HHARDataset(torch.utils.data.Dataset):
         if self._seq_length is None or new_length != self._seq_length:
             self.features, self.targets = self._to_sequence_chunks(new_length)
             self._seq_length = new_length
+
+    @property
+    def raw_path(self):
+        return os.path.join(self.root, "raw", "HHAR")
+
+    @property
+    def processed_path(self):
+        return os.path.join(self.root, "processed", "HHAR")
 
 
 if __name__ == "__main__":

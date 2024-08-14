@@ -1,19 +1,18 @@
 from torch.utils.data import ConcatDataset
+from .wesad import WESADDataset
+from .hhar import HHARDataset
+from .seq_mnist import SequentialMNIST
 
 from typing import List, Union
-
-DATA_PATH = "/raid/decaro/datasets"
 
 
 def get_dataset(name: str, users: Union[str, List[str]], continual: bool = False):
 
     if name == "WESAD":
-        from .wesad import WESADDataset
 
         data_class, n_contexts = WESADDataset, 5
 
     elif name == "HHAR":
-        from .hhar import HHARDataset
 
         data_class, n_contexts = HHARDataset, 4
 
@@ -43,3 +42,6 @@ def get_dataset(name: str, users: Union[str, List[str]], continual: bool = False
             ]
 
     return data
+
+
+__all__ = ["get_dataset", "SequentialMNIST", "WESADDataset", "HHARDataset"]

@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 import torch
 from torchvision import transforms
 from torchvision.datasets import MNIST
@@ -31,7 +31,9 @@ class SequentialMNIST(MNIST):
         self.permute_seed = permute_seed
 
     def __getitem__(self, index):
-        img, target = super().__getitem__(index)
+        raw = super().__getitem__(index)
+        img: torch.Tensor = raw[0]
+        target: torch.Tensor = raw[1]
         if self.permute_seed is not None:
             img = img.view(-1)[
                 torch.randperm(
