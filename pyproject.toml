@@ -6,7 +6,7 @@ authors = ["Valerio De Caro <valerio.decaro@phd.unipi.it>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 numpy = "<2"
 scipy = "^1.14.0"
 
