@@ -5,22 +5,21 @@ from torch import nn
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
-from .utils import load_mnist
+from utils import load_mnist
 
-from torchrc.models.rnn2 import RNN2Layer
+from torchrc.models.rnn_assembly import RNNAssembly
 
 
-class RNNofRNNsTrainable(tune.Trainable):
+class RNNAssemblyTrainable(tune.Trainable):
 
     def setup(self, config: Dict):
-        self.train_loader, self.eval_loader = load_mnist(128, 1024)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.build_trial(config)
 
     def step(self):
         run_loss_t = 0.0
         run_acc_t = 0.0
-        n_samples = 0
+        n_batches = 0
         self.model.train()
         for x, y in self.train_loader:
             self.opt.zero_grad()
@@ -31,72 +30,77 @@ class RNNofRNNsTrainable(tune.Trainable):
             loss.backward()
             self.opt.step()
 
-            run_loss_t = (run_loss_t * n_samples) + (loss.item() * x.size(1))
-            batch_acc = (y_pred.argmax(dim=-1) == y).sum().item()
-            run_acc_t = (run_acc_t * n_samples) + (batch_acc * x.size(1))
-            n_samples += y.size(0)
-            run_loss_t /= n_samples
-            run_acc_t /= n_samples
+            run_loss_t += loss.item()
+            run_acc_t += (
+                (y_pred.argmax(dim=-1).flatten() == y.flatten()).sum().item()
+            ) / len(y)
+            n_batches += 1
+        run_loss_t /= n_batches
+        run_acc_t /= n_batches
         self.lr.step()
 
         self.model.eval()
         run_loss_e = 0.0
         run_acc_e = 0.0
-        n_samples = 0
+        n_batches = 0
         with torch.no_grad():
             for x, y in self.eval_loader:
                 x, y = x.to(self.device), y.to(self.device)
                 all_pred, _ = self.model(x)
                 y_pred = all_pred[-1]
                 loss = self.loss(y_pred, y)
-                run_loss_e = (run_loss_e * n_samples) + (loss.item() * x.size(1))
-                batch_acc = (y_pred.argmax(dim=-1) == y).sum().item()
-                run_acc_e = (run_acc_e * n_samples) + (batch_acc * x.size(1))
-                n_samples += y.size(0)
-                run_loss_e /= n_samples
-                run_acc_e /= n_samples
-        return {
+                run_loss_e += loss.item()
+                run_acc_e += (
+                    (y_pred.argmax(dim=-1).flatten() == y.flatten()).sum().item()
+                ) / len(y)
+                n_batches += 1
+        run_loss_e /= n_batches
+        run_acc_e /= n_batches
+        res = {
             "train_loss": run_loss_t,
             "train_acc": run_acc_t,
             "test_loss": run_loss_e,
             "test_acc": run_acc_e,
         }
+        return res
 
     def save_checkpoint(self, checkpoint_dir: str) -> Dict | None:
-        return {"model": self.model.state_dict(), "opt": self.opt.state_dict()}
+        self.model.to("cpu")
+        torch.save(self.model, f"{checkpoint_dir}/model.pth")
+        self.model.to(self.device)
 
     def load_checkpoint(self, checkpoint: Dict):
-        self.model.load_state_dict(checkpoint["model"])
-        self.opt.load_state_dict(checkpoint["opt"])
+        self.model = torch.load(checkpoint["model.pth"])
+        self.model.to(self.device)
 
     def build_trial(self, config):
         # Build model with configuration
-        model_config = config["rnn_params"]
-        self.model = RNN2Layer(
+
+        self.train_loader, self.eval_loader = load_mnist(
+            128, 1024, permute_seed=config["permute_seed"], root=config["root"]
+        )
+        block_config = get_block_config(config["block_config"])
+        self.model = RNNAssembly(
             input_size=1,
             out_size=10,
-            block_sizes=model_config["blocks"],
-            coupling_indices=model_config["couplings"],
-            block_init_fn=get_init_fn(*model_config["block_init_fn"]),
-            coupling_block_init_fn=get_init_fn(*model_config["couple_init_fn"]),
-            eul_step=model_config["eul_step"],
-            activation=model_config["activation"],
-            adapt_blocks=model_config["adapt_blocks"],
-            squash_blocks=model_config["squash_blocks"],
-            orthogonal_blocks=model_config["orthogonal_blocks"],
+            block_sizes=config["block_sizes"],
+            coupling_perc=config["coupling_perc"],
+            block_init_fn=get_init_fn(*block_config[0]),
+            coupling_block_init_fn=get_init_fn(*config["coupling_block_init_fn"]),
+            generalized_coupling=config["generalized_coupling"],
+            eul_step=config["eul_step"],
+            activation=config["activation"],
+            constrained_blocks=block_config[1],
         )
-        self.model.to(self.device)
+        self.model.to(device=self.device)
 
         self.loss = nn.CrossEntropyLoss()
-        self.opt = Adam(self.model.parameters(), lr=config["opt_params"]["lr"])
+        self.opt = Adam(self.model.parameters())
         self.lr = MultiStepLR(
             self.opt,
-            milestones=config["opt_params"]["decay_epochs"],
-            gamma=config["opt_params"]["decay_scalar"],
+            milestones=config["decay_epochs"],
+            gamma=config["decay_scalar"],
         )
-
-    def reset_config(self, new_config):
-        self.build_trial(new_config)
 
 
 def get_init_fn(fn_str: str, *args):
@@ -105,7 +109,20 @@ def get_init_fn(fn_str: str, *args):
     if fn_str == "sparse":
         return lambda x: sparse(x, *args)
     if fn_str == "orthogonal":
-        return lambda x: orthogonal(x, *args)
+        return lambda x: orthogonal(x)
     if fn_str == "diagonal":
         return lambda x: diagonal(x)
     raise ValueError(f"Unknown initialization function {fn_str}")
+
+
+def get_block_config(idx: int):
+    # if idx == 0:
+    #     return (("orthogonal",), "orthogonal")
+    if idx == 1:
+        return (("sparse", 0.03), None)
+    if idx == 2:
+        return (("sparse", 0.1), None)
+    if idx == 3:
+        return (("diagonal",), "tanh")
+    if idx == 4:
+        return (("diagonal",), "clip")
