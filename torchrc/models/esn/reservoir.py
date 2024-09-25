@@ -49,19 +49,26 @@ class Reservoir(Module):
         self.input_scaling = Parameter(torch.tensor(input_scaling), requires_grad=False)
         self.rho = Parameter(torch.tensor(rho), requires_grad=False)
 
+        if isinstance(kernel_initializer, str):
+            kernel_initializer = getattr(initializers, kernel_initializer)
+        if isinstance(recurrent_initializer, str):
+            recurrent_initializer = getattr(initializers, recurrent_initializer)
+
         self.W_in = Parameter(
-            init_params(kernel_initializer, scale=input_scaling)(
-                [hidden_size, input_size]
+            initializers.rescale(
+                kernel_initializer([hidden_size, input_size]), input_scaling, "linear"
             ),
             requires_grad=False,
         )
         self.W_hat = Parameter(
-            init_params(recurrent_initializer, rho=rho)([hidden_size, hidden_size]),
+            initializers.rescale(
+                recurrent_initializer([hidden_size, hidden_size]), rho, "spectral"
+            ),
             requires_grad=False,
         )
         self.b = (
             Parameter(
-                init_params("uniform", scale=input_scaling)(hidden_size),
+                initializers.uniform([hidden_size], -input_scaling, input_scaling),
                 requires_grad=False,
             )
             if bias
@@ -73,9 +80,11 @@ class Reservoir(Module):
 
         self.net_gain_and_bias = net_gain_and_bias
         if net_gain_and_bias:
-            self.net_a = Parameter(init_params("ones")(hidden_size), requires_grad=True)
+            self.net_a = Parameter(
+                initializers.ones((hidden_size,)), requires_grad=True
+            )
             self.net_b = Parameter(
-                init_params("zeros")(hidden_size), requires_grad=True
+                initializers.zeros((hidden_size,)), requires_grad=True
             )
 
         self._aux_fwd_comp = None
@@ -124,14 +133,3 @@ class Reservoir(Module):
     def hidden_size(self) -> int:
         """Reservoir state dimension"""
         return self.W_hat.shape[1]
-
-
-def init_params(name: str, **options) -> Callable[[Size], Tensor]:
-    """
-    Gets a random weight initializer
-    :param name: Name of the random matrix generator in `esn.initializers`
-    :param options: Random matrix generator options
-    :return: A random weight generator function
-    """
-    init = getattr(initializers, name)
-    return lambda size: init(size, **options)
