@@ -14,9 +14,7 @@ class BlockDiagonal(nn.Module):
         blocks: Union[Callable[[torch.Size], torch.Tensor], List[torch.Tensor]],
         block_sizes: Optional[int] = None,
         bias: bool = False,
-        orthogonal: bool = False,
-        requires_grad: bool = True,
-        squash_blocks: Optional[Literal["tanh", "clip"]] = None,
+        constrained: Optional[Literal["tanh", "clip", "orthogonal"]] = None,
     ):
         """Initializes the block diagonal matrix.
 
@@ -32,8 +30,7 @@ class BlockDiagonal(nn.Module):
         """
         super().__init__()
         self._block_sizes = block_sizes
-        self._orthogonal = orthogonal
-        self.squash_blocks = squash_blocks
+        self._constrained = constrained
 
         if isinstance(blocks, list):
             self.raw_blocks = blocks
@@ -41,18 +38,18 @@ class BlockDiagonal(nn.Module):
         else:
             if block_sizes is None:
                 raise ValueError("block_sizes must be provided if blocks is a function")
-            self.raw_blocks = [blocks(b_size) for b_size in block_sizes]
+            self.raw_blocks = [blocks((b_size, b_size)) for b_size in block_sizes]
 
-        if orthogonal:
+        if constrained == "orthogonal":
             for i, block in enumerate(self.raw_blocks):
                 setattr(self, f"block_{i}", nn.Parameter(block))
                 geotorch.orthogonal(self, f"block_{i}")
         else:
-
             self._blocks = nn.Parameter(
-                block_diagonal(self.raw_blocks), requires_grad=requires_grad
+                block_diagonal(self.raw_blocks),
+                requires_grad=constrained is not None,
             )
-            self.register_buffer("_blocks_mask", (self._blocks_mask != 0))
+            self._blocks_mask = nn.Parameter(self._blocks != 0, requires_grad=False)
         if bias:
             self.bias = nn.Parameter(
                 torch.normal(mean=0, std=(1 / np.sqrt(self.layer_size)))
@@ -60,10 +57,9 @@ class BlockDiagonal(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         blocks = self.blocks
-        if self._orthogonal:
-            transform = torch.cat([x @ block for block in blocks], dim=-1)
-        else:
-            transform = x @ blocks
+        if self._constrained == "orthogonal":
+            blocks = blocks.to(x.device)
+        transform = x @ blocks
         if hasattr(self, "bias"):
             transform = transform + self.bias
         return transform
@@ -82,17 +78,15 @@ class BlockDiagonal(nn.Module):
 
     @property
     def blocks(self) -> Union[torch.Tensor, List[torch.Tensor]]:
-        if not self._orthogonal:
+        if self._constrained != "orthogonal":
             blocks_ = self._blocks * self._blocks_mask
-            if self.squash_blocks == "tanh":
+            if self._constrained == "tanh":
                 blocks_ = torch.tanh(blocks_)
-            elif self.squash_blocks == "clip":
-                blocks_ = torch.clamp(blocks_, -1, 1)
-            return blocks_
-        blocks_ = [getattr(self, f"block_{i}") for i in range(self.n_blocks)]
-        for i, block in enumerate(blocks_):
-            if self.squash_blocks == "tanh":
-                blocks_[i] = torch.tanh(block)
-            elif self.squash_blocks == "clip":
-                blocks_[i] = torch.clamp(block, -1, 1)
+            elif self._constrained == "clip":
+                blocks_ = torch.clamp(blocks_, -0.999, 0.999)
+        else:
+            blocks_ = block_diagonal(
+                [getattr(self, f"block_{i}") for i in range(self.n_blocks)]
+            )
+
         return blocks_

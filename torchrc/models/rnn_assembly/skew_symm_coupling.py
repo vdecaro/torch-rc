@@ -29,9 +29,11 @@ class SkewAntisymmetricCoupling(nn.Module):
                 of the generalized skew antysimmetric matrix. Defaults to None.
         """
         super().__init__()
-        if coupling_perc < 0 or coupling_perc > len(block_sizes):
+        if coupling_perc < 0 or coupling_perc > (
+            len(block_sizes) * (len(block_sizes) - 1) / 2
+        ):
             raise ValueError(
-                "coupling_perc must be either a percentage in (0,1) or an integer in [1, len(block_sizes)]"
+                f"coupling_perc must be either a percentage in (0,1) or an integer in [1, len(block_sizes)]. Got {coupling_perc}"
             )
         if generalized and diag_block_matrix is None:
             raise ValueError(
@@ -46,21 +48,22 @@ class SkewAntisymmetricCoupling(nn.Module):
         random.shuffle(coupling_indices)
         coupling_indices = coupling_indices[:coupling_perc]
         coupling_matrices = [
-            (i, j, coupling_block_init_fn(block_sizes[i], block_sizes[j]))
+            (i, j, coupling_block_init_fn((block_sizes[i], block_sizes[j])))
             for i, j in coupling_indices
         ]
 
         self._couplings = nn.Parameter(
-            block_diagonal_coupling(block_sizes, coupling_matrices, generalized)
+            torch.tensor(block_diagonal_coupling(block_sizes, coupling_matrices))
         )
-        self.register_buffer(
-            "_couple_mask",
-            self._couplings != 0,
-        )
+        self._couple_mask = nn.Parameter(self._couplings != 0, requires_grad=False)
 
         if generalized:
-            self.register_buffer("_metric_mat", _build_metric_matrix(diag_block_matrix))
-            self.register_buffer("_metric_mat_inv", torch.inverse(self._metric_mat))
+            self._metric_mat = nn.Parameter(
+                _build_metric_matrix(diag_block_matrix), requires_grad=False
+            )
+            self._metric_mat_inv = nn.Parameter(
+                torch.inverse(self._metric_mat), requires_grad=False
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         couple_masked: torch.Tensor = self._couple_mask * self._couplings
@@ -78,7 +81,7 @@ class SkewAntisymmetricCoupling(nn.Module):
 def _build_metric_matrix(diag_block_matrix: torch.Tensor) -> torch.Tensor:
     # what we actually want to find metric for is W - I -> just W won't be stable here
     # also first need to focus on abs(W), not W itself! that is what linear stable test can find, the same metric will then work for the other (per Thm 1)
-    full_W = diag_block_matrix.numpy()
+    full_W = diag_block_matrix.detach().numpy()
     W = np.abs(
         diag_block_matrix
     )  # diagonal is set to 0 already so no need to worry about that

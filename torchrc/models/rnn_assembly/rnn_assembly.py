@@ -3,12 +3,11 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-
 from .block_diagonal import BlockDiagonal
 from .skew_symm_coupling import SkewAntisymmetricCoupling
 
 
-class RNN2Layer(nn.Module):
+class RNNAssembly(nn.Module):
 
     def __init__(
         self,
@@ -21,9 +20,7 @@ class RNN2Layer(nn.Module):
         generalized_coupling: bool = False,
         eul_step: float = 1e-2,
         activation: str = "relu",
-        adapt_blocks: bool = False,
-        squash_blocks: Optional[Literal["tanh", "clip"]] = None,
-        orthogonal_blocks: bool = False,
+        constrained_blocks: Optional[Literal["tanh", "clip", "orthogonal"]] = None,
     ):
         """Initializes the RNN of RNNs layer.
 
@@ -47,7 +44,6 @@ class RNN2Layer(nn.Module):
         self._coupling_perc = coupling_perc
         self._eul_step = eul_step
         self._activation = activation
-        self._squash_blocks = squash_blocks
 
         self._input_mat = nn.Parameter(
             torch.normal(
@@ -61,9 +57,7 @@ class RNN2Layer(nn.Module):
         self._blocks = BlockDiagonal(
             blocks=block_init_fn,
             block_sizes=block_sizes,
-            orthogonal=orthogonal_blocks,
-            requires_grad=adapt_blocks,
-            squash_blocks=squash_blocks,
+            constrained=constrained_blocks,
         )
 
         self._couplings = SkewAntisymmetricCoupling(
@@ -71,6 +65,7 @@ class RNN2Layer(nn.Module):
             coupling_block_init_fn=coupling_block_init_fn,
             coupling_perc=coupling_perc,
             generalized=generalized_coupling,
+            diag_block_matrix=self._blocks.blocks if generalized_coupling else None,
         )
 
         self._out_mat = nn.Parameter(
@@ -88,17 +83,15 @@ class RNN2Layer(nn.Module):
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if initial_state is None:
-            initial_state = torch.zeros(self.hidden_size).to(self._blocks)
+            initial_state = torch.zeros(self.hidden_size).to(self._input_mat)
 
         embeddings = []
         state = initial_state
         timesteps = input.shape[0]
         if self._activation == "selfnorm":
-            activ_fn = (
-                lambda x: x / (x.norm(p=2, dim=-1, keepdim=True)).clamp(min=1e-6) * 0.99
-            )
+            activ_fn = lambda x: F.normalize(x, p=2, dim=-1)
         else:
-            activ_fn = getattr(F, self._activation)
+            activ_fn = getattr(torch, self._activation)
         for t in range(timesteps):
             state = state + self._eul_step * (
                 -state
