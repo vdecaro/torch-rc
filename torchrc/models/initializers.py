@@ -5,51 +5,19 @@ import scipy.sparse
 import numpy as np
 
 
-def get_initializer(
-    name: str,
-) -> Callable:
-    """
-    Get initializer function by name.
-
-    Args:
-        name (str): name of the initializer.
-    Returns:
-        Callable: initializer function.
-    """
-
-    if name == "uniform":
-        return uniform
-    elif name == "normal":
-        return normal
-    elif name == "ring":
-        return ring
-    elif name == "orthogonal":
-        return orthogonal
-    elif name == "ones":
-        return ones
-    elif name == "zeros":
-        return zeros
-    elif name == "block_diagonal":
-        return block_diagonal
-    else:
-        raise ValueError(f"Unknown initializer: {name}")
-
-
 def rescale(
     tensor: torch.Tensor,
-    method: Literal["spectral", "singular", "norm", "linear"],
-    value: float,
+    method: Literal["spectral", "singular", "norm", "linear"] = "spectral",
+    value: float = 0.999,
 ) -> torch.Tensor:
     """
-    Rescale a matrix in-place. Can either be rescaled according to spectral radius
-    `rho`, spectral norm `sigma`, or `scale`.
+    Rescale a matrix in-place. Rescaling can be done according to the spectral radius,
+    spectral norm, matrix norm, or linear scaling.
 
     Args:
         shape (torch.Size): shape of the tensor.
-        rho (Optional[float], optional): spectral radius value. Defaults to None.
-        sigma (Optional[float], optional): standard deviation used for normal
-            initialization. Defaults to None.
-        scale (Optional[float], optional): scaling value. Defaults to None.
+        method (Literal["spectral", "singular", "norm", "linear"]): rescaling method.
+        value (float): scaling value.
 
     Returns:
         torch.Tensor: initialized tensor.
@@ -131,10 +99,7 @@ def ring(
     return tensor
 
 
-def orthogonal(
-    shape: torch.Size,
-    gain: float = 1,
-) -> torch.Tensor:
+def orthogonal(shape: torch.Size) -> torch.Tensor:
     """
     Orthogonal matrix. See:
         F. Mezzadri (2007). How to Generate Random Matrices from the Classical Compact
@@ -150,7 +115,7 @@ def orthogonal(
     """
 
     mat = torch.empty(shape)
-    torch.nn.init.orthogonal_(mat, gain)
+    torch.nn.init.orthogonal_(mat)
     return mat
 
 
@@ -193,13 +158,14 @@ def diagonal(shape: int, min_val: float = -1, max_val: float = 1) -> torch.Tenso
     Returns:
         torch.Tensor: initialized tensor.
     """
-    return torch.diag(torch.empty(shape).uniform_(min_val, max_val))
+    return torch.diag(torch.empty(shape[0]).uniform_(min_val, max_val))
 
 
 def sparse(
     shape: torch.Size,
     density: float = 0.01,
     values_sampler: Optional[Callable[..., np.ndarray]] = None,
+    zero_diagonal: bool = True,
     seed: Optional[int] = None,
 ) -> torch.Tensor:
     """
@@ -207,6 +173,11 @@ def sparse(
 
     Args:
         shape (torch.Size): shape of the tensor.
+        density (float, optional): density of the sparse tensor. Defaults to 0.01.
+        values_sampler (Optional[Callable[..., np.ndarray]], optional): function to sample
+            values for the sparse tensor. Defaults to None.
+        zero_diagonal (bool, optional): whether to zero the diagonal. Defaults to True.
+        seed (Optional[int], optional): random seed. Defaults to None.
 
     Returns:
         torch.Tensor: initialized sparse random tensor.
@@ -221,7 +192,8 @@ def sparse(
         data_rvs=values_sampler,
         random_state=seed,
     ).toarray()
-    np.fill_diagonal(sparse_mat, 0)
+    if zero_diagonal:
+        np.fill_diagonal(sparse_mat, 0)
     return torch.tensor(sparse_mat).float()
 
 
@@ -242,11 +214,12 @@ def block_diagonal(
     n_total = sum([b.shape[0] for b in blocks])
 
     mat = torch.zeros(n_total, n_total)
-    n_units = blocks[0].shape[0]
+    curr_idx = 0
     for block in blocks:
         curr_units = block.shape[0]
-        extent = n_units + curr_units
-        mat[n_units:extent, n_units:extent] = block
+        extent = curr_idx + curr_units
+        mat[curr_idx:extent, curr_idx:extent] = block
+        curr_idx = extent
     return mat
 
 
@@ -294,6 +267,5 @@ __all__ = [
     "block_diagonal",
     "sparse",
     "block_diagonal_coupling",
-    "get_initializer",
     "rescale",
 ]

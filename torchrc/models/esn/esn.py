@@ -73,7 +73,7 @@ class EchoStateNetwork(nn.Module):
             torch.normal(
                 mean=0,
                 std=1 / np.sqrt(self.state_dim),
-                size=(layers[-1], output_size),
+                size=(self.state_dim, output_size),
             ),
             requires_grad=True,
         )
@@ -110,7 +110,7 @@ class EchoStateNetwork(nn.Module):
         pred = x @ self.readout
 
         if return_states:
-            return pred, [s[-1] for s in states]
+            return pred, states
         return pred
 
     def fit_readout(
@@ -133,6 +133,15 @@ class EchoStateNetwork(nn.Module):
             preprocess_fn (Optional[Callable], optional): preprocessing function. Defaults to None.
             device (Optional[str], optional): device to use. Defaults to None.
         """
+
+        def preprocess_fn(x):
+            if self._arch_type == "multi":
+                return torch.cat(
+                    [reservoir(x) for reservoir in self.reservoirs], dim=-1
+                )
+            elif self._arch_type == "stacked":
+                return self.reservoirs[-1](x)
+
         if eval_on:
             if score_fn is None:
                 raise ValueError("Score function must be provided for validation.")
@@ -153,7 +162,7 @@ class EchoStateNetwork(nn.Module):
                 train_loader=train_loader,
                 eval_loader=eval_loader,
                 l2_values=l2_value,
-                preprocess_fn=lambda x: self(x, return_states=True)[1],
+                preprocess_fn=preprocess_fn,
                 score_fn=score_fn,
                 mode=mode,
                 device=next(self.parameters()).device,
@@ -163,8 +172,8 @@ class EchoStateNetwork(nn.Module):
         else:
             readout = fit_readout(
                 train_loader,
-                lambda x: self(x, return_states=True)[1],
-                l2_value,
+                preprocess_fn=preprocess_fn,
+                l2=l2_value,
                 device=next(self.parameters()).device,
             )
             print("ESN Trained.")
