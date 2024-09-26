@@ -136,11 +136,15 @@ class EchoStateNetwork(nn.Module):
 
         def preprocess_fn(x):
             if self._arch_type == "multi":
-                return torch.cat(
-                    [reservoir(x) for reservoir in self.reservoirs], dim=-1
-                )
+                states = []
+                for _, reservoir in enumerate(self.reservoirs):
+                    states.append(reservoir(x))
+                return torch.cat(states, dim=-1)
             elif self._arch_type == "stacked":
-                return self.reservoirs[-1](x)
+                state = x
+                for reservoir in self.reservoirs:
+                    state = reservoir(state)
+                return state
 
         if eval_on:
             if score_fn is None:
@@ -178,7 +182,7 @@ class EchoStateNetwork(nn.Module):
             )
             print("ESN Trained.")
 
-        self.readout.data = readout
+        self.readout.data = readout.T
 
     @property
     def state_dim(self) -> int:
