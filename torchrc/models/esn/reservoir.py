@@ -56,13 +56,13 @@ class Reservoir(Module):
 
         self.W_in = Parameter(
             initializers.rescale(
-                kernel_initializer([hidden_size, input_size]), input_scaling, "linear"
+                kernel_initializer([hidden_size, input_size]), "linear", input_scaling
             ),
             requires_grad=False,
         )
         self.W_hat = Parameter(
             initializers.rescale(
-                recurrent_initializer([hidden_size, hidden_size]), rho, "spectral"
+                recurrent_initializer([hidden_size, hidden_size]), "spectral", rho
             ),
             requires_grad=False,
         )
