@@ -94,7 +94,7 @@ class EchoStateNetwork(nn.Module):
         Returns:
             torch.Tensor: output tensor.
         """
-        if len(initial_state) != len(self.reservoirs):
+        if initial_state is not None and len(initial_state) != len(self.reservoirs):
             raise ValueError(
                 f"Initial state must be provided for each reservoir. Expected "
                 f"{len(self.reservoirs)}, got {len(initial_state)}."
