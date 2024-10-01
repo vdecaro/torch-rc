@@ -135,13 +135,14 @@ class EchoStateNetwork(nn.Module):
         """
 
         def preprocess_fn(x):
+            state = x
             if self._arch_type == "multi":
                 states = []
                 for _, reservoir in enumerate(self.reservoirs):
-                    states.append(reservoir(x))
+                    state = reservoir(state)
+                    states.append(state)
                 return torch.cat(states, dim=-1)
             elif self._arch_type == "stacked":
-                state = x
                 for reservoir in self.reservoirs:
                     state = reservoir(state)
                 return state
