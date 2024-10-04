@@ -6,7 +6,7 @@ from torch import Tensor, Size
 from torch.nn import Module, Parameter
 
 from torchrc.models import initializers
-
+import logging
 
 class Reservoir(Module):
     """
@@ -44,7 +44,10 @@ class Reservoir(Module):
     ) -> None:
 
         super().__init__()
-        assert rho < 1 and input_scaling <= 1
+        if rho >= 1:
+            logging.warn(f"rho {rho} >= 1")
+        if input_scaling > 1:
+            logging.warn(f"input_scaling {input_scaling} > 1")
 
         self.input_scaling = Parameter(torch.tensor(input_scaling), requires_grad=False)
         self.rho = Parameter(torch.tensor(rho), requires_grad=False)
