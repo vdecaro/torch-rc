@@ -17,6 +17,7 @@ def fit_and_validate_readout(
     weights: Optional[List[float]] = None,
     preprocess_fn: Optional[Callable] = None,
     device: Optional[str] = None,
+    washout: int = 0,
 ) -> Tuple[Tensor, Tensor]:
     """Applies the ridge regression on the training data with all the given l2 values
     and returns the best configuration after evaluating the linear transformations on
@@ -39,6 +40,7 @@ def fit_and_validate_readout(
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
+        washout (int, optional): washout period. Defaults to 0.
 
     Returns:
         Tuple[Tensor, float, float]: a Tuple containing the best linear matrix, the
@@ -48,7 +50,7 @@ def fit_and_validate_readout(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Training
-    all_W = fit_readout(train_loader, preprocess_fn, l2_values, weights, device)
+    all_W = fit_readout(train_loader, preprocess_fn, l2_values, weights, device, washout=washout)
     if not isinstance(all_W, List):
         all_W = [all_W]
 
@@ -69,6 +71,7 @@ def fit_readout(
     l2: Optional[Union[float, List[float]]] = None,
     weights: Optional[List[float]] = None,
     device: Optional[str] = "cpu",
+    washout: int = 0,
 ) -> Tuple[Tensor, Tensor]:
     """Applies the ridge regression on the training data with all the given l2 values
     and returns a list of matrices, one for each L2 value.
@@ -84,12 +87,13 @@ def fit_readout(
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
+        washout (int, optional): washout period. Defaults to 0.
 
     Returns:
         Tuple[Tensor, float, float]: a Tuple containing the best linear matrix, the
             corrisponding l2 value and the metric value.
     """
-    A, B = compute_ridge_matrices(train_loader, preprocess_fn, weights, device)
+    A, B = compute_ridge_matrices(train_loader, preprocess_fn, weights, device, washout=washout)
     if isinstance(l2, List):
         return [solve_ab_decomposition(A, B, curr_l2, device) for curr_l2 in l2]
     else:
@@ -161,6 +165,7 @@ def compute_ridge_matrices(
     preprocess_fn: Optional[Callable] = None,
     weights: Optional[List[float]] = None,
     device: Optional[str] = None,
+    washout: int = 0,
 ) -> Tuple[Tensor, Tensor]:
     """
     Computes the matrices A and B for incremental ridge regression. For each batch in
@@ -176,6 +181,7 @@ def compute_ridge_matrices(
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
+        washout (int, optional): washout period. Defaults to 0.
 
     Returns:
         Tuple[Tensor, Tensor]: the matrices A of shape
@@ -195,6 +201,11 @@ def compute_ridge_matrices(
             x = preprocess_fn(x)
         size_x = x.size()
         size_y = y.size()
+        if washout is not None and washout > 0:
+            if washout >= x.size(0):
+                raise ValueError(f"Washout period ({washout}) must be smaller than the sequence length ({x.size(0)}).")
+            x = x[washout:]
+            y = y[washout:]
         if len(size_x) > 2:
             x = x.reshape(-1, size_x[-1])
             y = y.reshape(-1, size_y[-1])

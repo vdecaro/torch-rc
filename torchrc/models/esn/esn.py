@@ -1,3 +1,4 @@
+import logging
 from typing import Callable, List, Literal, Optional, Union
 import numpy as np
 import torch
@@ -120,6 +121,7 @@ class EchoStateNetwork(nn.Module):
         score_fn: Optional[Callable[[Tensor, Tensor], float]] = None,
         mode: Optional[Literal["min", "max"]] = None,
         eval_on: Optional[Union[Literal["train"], DataLoader]] = None,
+        washout: int = 0,
     ):
         """Fit the readout layer.
 
@@ -132,6 +134,7 @@ class EchoStateNetwork(nn.Module):
             weights (Optional[List[float]], optional): weights for the loss. Defaults to None.
             preprocess_fn (Optional[Callable], optional): preprocessing function. Defaults to None.
             device (Optional[str], optional): device to use. Defaults to None.
+            washout (int, optional): washout period. Defaults to 0.
         """
 
         def preprocess_fn(x):
@@ -171,8 +174,9 @@ class EchoStateNetwork(nn.Module):
                 score_fn=score_fn,
                 mode=mode,
                 device=next(self.parameters()).device,
+                washout=washout,
             )
-            print(f"ESN Trained. \n\Chosen L2: {best_l2}\n\Score: {best_score:.4f}")
+            logging.info(f"ESN Trained. \n\Chosen L2: {best_l2}\n\Score: {best_score:.4f}")
 
         else:
             readout = fit_readout(
@@ -180,8 +184,9 @@ class EchoStateNetwork(nn.Module):
                 preprocess_fn=preprocess_fn,
                 l2=l2_value,
                 device=next(self.parameters()).device,
+                washout=washout,
             )
-            print("ESN Trained.")
+            logging.info("ESN Trained.")
 
         self.readout.data = readout.T
 
