@@ -32,9 +32,9 @@ class IntrinsicPlasticity:
         self.mu: float = mu
         self.v: float = sigma**2
 
-        self._reservoir: Reservoir = None
-        self._old_fwd: Callable = None
-        self._opt: torch.optim.SGD = None
+        self._reservoir: Optional[Reservoir] = None
+        self._old_fwd: Optional[Callable] = None
+        self._opt: Optional[torch.optim.SGD] = None
         self.compiled: bool = False
 
         self._tmp_in_signal, self._tmp_h, self._tmp_mask = None, None, None
@@ -74,6 +74,7 @@ class IntrinsicPlasticity:
 
         self._reservoir = reservoir
         self._reservoir._aux_fwd_comp = self._ip_state_comp()
+
         self._opt = torch.optim.SGD(self._reservoir.parameters(), self._lr)
         self.compiled = True
 
@@ -90,6 +91,12 @@ class IntrinsicPlasticity:
             mask: Optional[Tensor] = None,
         ) -> Generator:
             res = self._reservoir
+
+            if res is None:
+                raise ValueError(
+                    "Reservoir not found. Compile the optimizer with a Reservoir."
+                )
+
             timesteps, in_signal, h, state = input.shape[0], [], [], initial_state
             for t in range(timesteps):
                 in_signal_t = F.linear(input[t], res.W_in, res.b) + F.linear(

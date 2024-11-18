@@ -97,7 +97,7 @@ def fit_readout(
     weights: Optional[List[float]] = None,
     skip_first_n: int = 0,
     device: Optional[str] = "cpu",
-) -> Tuple[Tensor, Tensor]:
+) -> Tuple[Tensor, Tensor, Tensor]:
     """Applies the ridge regression on the training data with all the given l2 values
     and returns a list of matrices, one for each L2 value.
 
