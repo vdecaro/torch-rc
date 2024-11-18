@@ -15,6 +15,8 @@
 
 TorchDyno is a PyTorch-based library for the implementation of dynamical systems. It provides a simple and flexible way to build and train non-standard recurrent models, such as Reservoir Computing models. TorchDyno is designed to be easy to use, efficient, and flexible. It is built on top of PyTorch, which makes it easy to integrate with other PyTorch-based libraries.
 
+Here's the link to the documentation: [https://torchdyno.readthedocs.io/en/latest/](https://torchdyno.readthedocs.io/en/latest/)
+
 ## Installation
 
 To install TorchDyno and all its dependencies, you can run the following commands:

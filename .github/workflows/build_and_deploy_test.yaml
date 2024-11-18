@@ -1,0 +1,32 @@
+name: Build and Deploy to PyPI
+on: [workflow_dispatch]
+
+jobs:
+  build_and_deploy:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: make setup
+
+      - name: Build the Package
+        run: make build
+
+      - name: Verify the distribution
+        run: make verify
+
+      - name: Upload to PyPI
+        run: |
+          poetry config pypi-token.test-pypi ${{ secrets.TORCHDYNO_TEST_PYPI_TOKEN }}
+          poetry publish -r test-pypi --skip-existing -vv --no-interaction
