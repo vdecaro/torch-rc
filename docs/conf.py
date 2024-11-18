@@ -9,12 +9,12 @@ from importlib import import_module
 
 from jinja2.filters import FILTERS
 
-sys.path.insert(0, os.path.abspath(".."))
+# sys.path.insert(0, os.path.abspath(".."))
 
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-project = "torchdyno"
+project = "TorchDyno"
 copyright = str(datetime.now().year) + ", Valerio De Caro"
 author = "Valerio De Caro"
 
