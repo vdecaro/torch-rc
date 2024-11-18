@@ -22,8 +22,7 @@ from torchdyno.models import initializers
 
 
 class Reservoir(Module):
-    """
-    A Reservoir of for Echo State Networks
+    """A Reservoir of for Echo State Networks.
 
     Args:
         input_size: the number of expected features in the input `x`
@@ -221,10 +220,10 @@ class Reservoir(Module):
 
     @property
     def input_size(self) -> int:
-        """Input dimension"""
+        """Input dimension."""
         return self.W_in.shape[1]
 
     @property
     def hidden_size(self) -> int:
-        """Reservoir state dimension"""
+        """Reservoir state dimension."""
         return self.W_hat.shape[1]

@@ -14,9 +14,9 @@ from torchdyno.models.esn import Reservoir
 class IntrinsicPlasticity:
     """Intrinsic Plasticity optimizer.
 
-    The Intrinsic Plasticity optimizer is a learning rule that modifies the gain and bias
-    of a Reservoir of an Echo State Network. It is used to maximize the information gain
-    of the reservoir.
+    The Intrinsic Plasticity optimizer is a learning rule that modifies the gain and
+    bias of a Reservoir of an Echo State Network. It is used to maximize the information
+    gain of the reservoir.
     """
 
     def __init__(self, learning_rate: float, mu: float, sigma: float):

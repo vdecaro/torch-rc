@@ -75,8 +75,10 @@ class LorenzSystem(Dataset):
         return self.length - self.target_delay
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Return the item at the given index. If return_full_sequence is True, the
-        index is ignored."""
+        """Return the item at the given index.
+
+        If return_full_sequence is True, the index is ignored.
+        """
         data, target = [], []
         for dim in ["x", "y", "z"]:
             if self.return_full_sequence:

@@ -43,8 +43,10 @@ class MemoryCapacityDataset(Dataset):
         return self.length - self.delay
 
     def __getitem__(self, idx: int):
-        """Return the item at the given index. If return_full_sequence is True, the
-        index is ignored."""
+        """Return the item at the given index.
+
+        If return_full_sequence is True, the index is ignored.
+        """
         if self.return_full_sequence:
             target = []
             for i in range(self.delay + 1):

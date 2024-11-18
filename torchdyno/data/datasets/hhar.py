@@ -27,8 +27,8 @@ class HHARDataset(torch.utils.data.Dataset):
 
     The HHAR dataset is a dataset of human activity recognition (HAR) collected from
     smartphones and smartwatches. The dataset contains accelerometer and gyroscope data
-    from different devices and users. The dataset is used to classify the activity of the
-    user based on the sensor data.
+    from different devices and users. The dataset is used to classify the activity of
+    the user based on the sensor data.
     """
 
     USERS = {
@@ -191,8 +191,11 @@ class HHARDataset(torch.utils.data.Dataset):
 
     @seq_length.setter
     def seq_length(self, new_length: int):
-        """Set the sequence length. If the sequence length is different from the current
-        one, the dataset is split into sequences of the new length."""
+        """Set the sequence length.
+
+        If the sequence length is different from the current one, the dataset is split
+        into sequences of the new length.
+        """
         if self._seq_length is None or new_length != self._seq_length:
             self.features, self.targets = self._to_sequence_chunks(new_length)
             self._seq_length = new_length

@@ -12,9 +12,9 @@ from torchvision.datasets import MNIST
 class SequentialMNIST(MNIST):
     """Sequential MNIST dataset.
 
-    The Sequential MNIST dataset is a variant of the MNIST dataset where the pixels of the
-    images are permuted in a fixed way. Each image is treated pixel by pixel as a sequence,
-    resulting in the concatenation of the rows of the image.
+    The Sequential MNIST dataset is a variant of the MNIST dataset where the pixels of
+    the images are permuted in a fixed way. Each image is treated pixel by pixel as a
+    sequence, resulting in the concatenation of the rows of the image.
     """
 
     def __init__(

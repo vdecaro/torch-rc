@@ -17,9 +17,8 @@ def rescale(
     method: Literal["spectral", "singular", "norm", "linear"] = "spectral",
     value: float = 0.999,
 ) -> torch.Tensor:
-    """
-    Rescale a matrix in-place. Rescaling can be done according to the spectral radius,
-    spectral norm, matrix norm, or linear scaling.
+    """Rescale a matrix in-place. Rescaling can be done according to the spectral
+    radius, spectral norm, matrix norm, or linear scaling.
 
     Args:
         shape (torch.Size): shape of the tensor.
@@ -45,8 +44,7 @@ def uniform(
     max_val: Optional[float] = None,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    """
-    Uniform random tensor.
+    """Uniform random tensor.
 
     Args:
         shape (torch.Size): shape of the tensor.
@@ -70,8 +68,7 @@ def normal(
     std: float = 1,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    """
-    Normal random tensor. Can either be rescaled according to spectral radius `rho`,
+    """Normal random tensor. Can either be rescaled according to spectral radius `rho`,
     spectral norm `sigma`, or `scale`.
 
     Args:
@@ -117,8 +114,7 @@ def ring(
 def lower_feedforward(
     shape: torch.Size, dtype: torch.dtype = torch.float32
 ) -> torch.Tensor:
-    """
-    Lower feedforward matrix.
+    """Lower feedforward matrix.
 
     Args:
         shape (torch.Size): shape of the tensor.
@@ -159,8 +155,7 @@ def orthogonal(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.T
 
 
 def ones(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.Tensor:
-    """
-    Ones tensor.
+    """Ones tensor.
 
     Args:
         shape (torch.Size): shape of the tensor.
@@ -173,8 +168,7 @@ def ones(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.Tensor:
 
 
 def zeros(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.Tensor:
-    """
-    Zeros tensor.
+    """Zeros tensor.
 
     Args:
         shape (torch.Size): shape of the tensor
@@ -191,8 +185,7 @@ def diagonal(
     max_val: float = 1,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    """
-    Diagonal random tensor.
+    """Diagonal random tensor.
 
     Args:
         shape (int): shape of the tensor.
@@ -213,8 +206,7 @@ def sparse(
     seed: Optional[int] = None,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    """
-    Sparse random tensor.
+    """Sparse random tensor.
 
     Args:
         shape (torch.Size): shape of the tensor.
@@ -249,8 +241,7 @@ def sparse(
 def block_diagonal(
     blocks: List[torch.Tensor],
 ) -> torch.Tensor:
-    """
-    Create a block diagonal matrix from a list of matrices.
+    """Create a block diagonal matrix from a list of matrices.
 
     Args:
         blocks (torch.Tensor): list of matrices.

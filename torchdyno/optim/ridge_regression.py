@@ -208,10 +208,9 @@ def compute_ridge_matrices(
     skip_first_n: int = 0,
     device: Optional[str] = None,
 ) -> Tuple[Tensor, Tensor]:
-    """
-    Computes the matrices A and B for incremental ridge regression. For each batch in
-    the loader, it applies the preprocess_fn on  the x sample, resizes it to
-    (n_samples, hidden_size), and computes the values of A and B.
+    """Computes the matrices A and B for incremental ridge regression. For each batch in
+    the loader, it applies the preprocess_fn on  the x sample, resizes it to (n_samples,
+    hidden_size), and computes the values of A and B.
 
     Args:
         loader (DataLoader): torch loader
@@ -267,8 +266,7 @@ def compute_ridge_matrices(
 def solve_ab_decomposition(
     A: Tensor, B: Tensor, l2: Optional[float] = None, device: Optional[str] = None
 ) -> Tensor:
-    """
-    Computes the result of the AB decomposition for solving the linear system
+    """Computes the result of the AB decomposition for solving the linear system.
 
     Args:
         A (Tensor): YS^T, where Y is the target matrix and S is the input matrix.
@@ -290,10 +288,9 @@ def solve_ab_decomposition(
 def compress_ridge_matrices(
     A: Tensor, B: Tensor, perc_rec: float, alpha: float
 ) -> Tuple[Tensor, Tensor]:
-    """
-    Masks the matrices A and B according to the percentage of recurrent neurons to be used.
-    The `perc_rec` percentage of the most important recurrent neurons are used, where the
-    importance is measured by the sum of the squares of the columns of B.
+    """Masks the matrices A and B according to the percentage of recurrent neurons to be
+    used. The `perc_rec` percentage of the most important recurrent neurons are used,
+    where the importance is measured by the sum of the squares of the columns of B.
 
     Args:
         A (Tensor): YS^T

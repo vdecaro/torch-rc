@@ -12,8 +12,8 @@ class WESADDataset(torch.utils.data.Dataset):
 
     The WESAD dataset is a dataset of physiological signals collected from a wristband
     and a chest strap. The dataset contains data from 15 subjects performing different
-    activities. The dataset is used to classify the cognitive state of the user based on the
-    physiological signals.
+    activities. The dataset is used to classify the cognitive state of the user based on
+    the physiological signals.
     """
 
     USERS = {
