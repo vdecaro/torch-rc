@@ -2,6 +2,8 @@ from torch.utils.data import ConcatDataset
 from .wesad import WESADDataset
 from .hhar import HHARDataset
 from .seq_mnist import SequentialMNIST
+from .lorenz_system import LorenzSystem
+from .memory_capacity import MemoryCapacityDataset
 
 from typing import List, Union
 
@@ -44,4 +46,11 @@ def get_dataset(name: str, users: Union[str, List[str]], continual: bool = False
     return data
 
 
-__all__ = ["get_dataset", "SequentialMNIST", "WESADDataset", "HHARDataset"]
+__all__ = [
+    "get_dataset",
+    "SequentialMNIST",
+    "WESADDataset",
+    "HHARDataset",
+    "LorenzSystem",
+    "MemoryCapacityDataset",
+]
