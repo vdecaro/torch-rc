@@ -39,3 +39,8 @@ TorchDyno is a PyTorch-based library for the implementation of dynamical systems
          :class: start-button
 
          :octicon:`book;1em;info` References
+
+===========
+**Credits**
+===========
+We thank [eclypse-org](https://github.com/eclypse-org) and [Jacopo Massa](https://github.com/jacopo-massa) for the structure and the template of the documentation!
