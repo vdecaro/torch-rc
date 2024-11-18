@@ -37,7 +37,7 @@ class RNNAssembly(nn.Module):
         out_size: int,
         blocks: List[torch.Tensor],
         coupling_blocks: List[torch.Tensor],
-        coupling_topology: Union[int, float, List[Tuple[int, int]]],
+        coupling_topology: List[Tuple[int, int]],
         eul_step: float = 1e-2,
         activation: str = "tanh",
         constrained_blocks: Optional[
@@ -131,14 +131,19 @@ class RNNAssembly(nn.Module):
         """
 
         if isinstance(block_init_fn, str):
-            block_init_fn = getattr(initializers, block_init_fn)
-        if isinstance(coupling_block_init_fn, str):
-            coupling_block_init_fn = getattr(initializers, coupling_block_init_fn)
+            block_init_fn_: Callable = getattr(initializers, block_init_fn)
+        else:
+            block_init_fn_ = block_init_fn
 
-        blocks = [block_init_fn((b_size, b_size), dtype) for b_size in block_sizes]
+        if isinstance(coupling_block_init_fn, str):
+            coupling_block_init_fn_ = getattr(initializers, coupling_block_init_fn)
+        else:
+            coupling_block_init_fn_ = coupling_block_init_fn
+
+        blocks = [block_init_fn_((b_size, b_size), dtype) for b_size in block_sizes]
         coupling_indices = get_coupling_indices(block_sizes, coupling_topology)
         coupling_blocks = [
-            coupling_block_init_fn((block_sizes[i], block_sizes[j]), dtype)
+            coupling_block_init_fn_((block_sizes[i], block_sizes[j]), dtype)
             for i, j in coupling_indices
         ]
 
@@ -260,6 +265,7 @@ class RNNAssembly(nn.Module):
 
         if eval_on:
             return best_score
+        return None
 
     @property
     def hidden_size(self) -> int:

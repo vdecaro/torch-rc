@@ -62,8 +62,9 @@ class SkewAntisymmetricCoupling(nn.Module):
 
 
 def get_coupling_indices(
-    block_sizes: List[int], coupling_topology: Union[int, float, Literal["ring"]]
-):
+    block_sizes: List[int],
+    coupling_topology: Union[int, float, Literal["ring"], List[Tuple[int, int]]],
+) -> List[Tuple[int, int]]:
     """Returns the coupling indices based on the topology.
 
     Args:
@@ -84,7 +85,7 @@ def get_coupling_indices(
             coupling_topology = int(coupling_topology * len(coupling_indices))
 
         coupling_indices = random.sample(
-            coupling_indices, min(len(coupling_indices), coupling_topology)
+            coupling_indices, int(min(len(coupling_indices), coupling_topology))
         )
     elif coupling_topology == "ring":
         coupling_indices = [

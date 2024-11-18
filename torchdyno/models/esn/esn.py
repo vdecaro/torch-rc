@@ -65,7 +65,7 @@ class EchoStateNetwork(nn.Module):
         reservoirs: List[Reservoir],
         output_size: int,
         combine_reservoirs: Literal[
-            "stacked", "multi", "parallel", "merge", "merge_antisymmetric"
+            "stacked", "multi", "parallel", "merge"
         ] = "stacked",
         joint_scaling: float = 1.0,
         independent_inputs: bool = False,
@@ -84,10 +84,10 @@ class EchoStateNetwork(nn.Module):
         """
         ...
 
-    def __init__(
+    def __init__(  # type: ignore[misc]
         self,
+        output_size: int,
         input_size: Optional[int] = None,
-        output_size: Optional[int] = None,
         layer_sizes: Optional[List[int]] = None,
         arch_type: Literal["stacked", "multi", "parallel"] = "stacked",
         activation: str = "tanh",
@@ -100,12 +100,17 @@ class EchoStateNetwork(nn.Module):
         net_gain_and_bias: bool = False,
         reservoirs: Optional[List[Reservoir]] = None,
         combine_reservoirs: Literal[
-            "stacked", "multi", "parallel", "merge", "merge_antisymmetric"
+            "stacked", "multi", "parallel", "merge"
         ] = "stacked",
         joint_scaling: float = 1.0,
         independent_inputs: bool = False,
     ):
         super().__init__()
+        if input_size is None and reservoirs is None:
+            raise ValueError("Either input size or reservoirs must be provided.")
+        if output_size is None:
+            raise ValueError("Output size must be provided.")
+
         if reservoirs is not None:
             self._from_reservoirs(
                 reservoirs,
@@ -115,6 +120,16 @@ class EchoStateNetwork(nn.Module):
                 independent_inputs,
             )
         else:
+            if input_size is None:
+                raise ValueError("Input size must be provided.")
+            if layer_sizes is None:
+                raise ValueError("Layer sizes must be provided.")
+            if len(layer_sizes) == 0:
+                raise ValueError("At least one hidden layer must be defined.")
+            if arch_type not in ["stacked", "multi", "parallel"]:
+                raise ValueError(
+                    f"Unknown architecture type: {arch_type}. Choose from 'stacked', 'multi' or 'parallel'."
+                )
             self._from_hyperparameters(
                 input_size,
                 output_size,
@@ -134,7 +149,7 @@ class EchoStateNetwork(nn.Module):
         self,
         input_size: int,
         output_size: int,
-        layer_sizes: List[int] = None,
+        layer_sizes: List[int],
         arch_type: Literal["stacked", "multi", "parallel"] = "stacked",
         activation: str = "tanh",
         leakage: float = 1.0,
@@ -217,7 +232,7 @@ class EchoStateNetwork(nn.Module):
             )
             reservoirs = [reservoir]
         else:
-            self.arch_type = combine_reservoirs
+            self.arch_type = combine_reservoirs  # type: ignore[assignment]
         self.reservoirs = nn.ModuleList(reservoirs)
         self.readout = nn.Parameter(
             torch.normal(
@@ -244,7 +259,7 @@ class EchoStateNetwork(nn.Module):
         Returns:
             torch.Tensor: output tensor.
         """
-        if len(initial_state) != len(self.reservoirs):
+        if initial_state is not None and len(initial_state) != len(self.reservoirs):
             raise ValueError(
                 f"Initial state must be provided for each reservoir. Expected "
                 f"{len(self.reservoirs)}, got {len(initial_state)}."

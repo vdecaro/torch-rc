@@ -9,6 +9,7 @@ from typing import (
 import torch
 import torch.nn.functional as F
 from torch import (
+    Generator,
     Size,
     Tensor,
 )
@@ -62,19 +63,24 @@ class Reservoir(Module):
         self.rho = Parameter(torch.tensor(rho), requires_grad=False)
 
         if isinstance(kernel_initializer, str):
-            kernel_initializer = getattr(initializers, kernel_initializer)
+            kernel_initializer_ = getattr(initializers, kernel_initializer)
+        else:
+            kernel_initializer_ = kernel_initializer
+
         if isinstance(recurrent_initializer, str):
-            recurrent_initializer = getattr(initializers, recurrent_initializer)
+            recurrent_initializer_ = getattr(initializers, recurrent_initializer)
+        else:
+            recurrent_initializer_ = recurrent_initializer
 
         self.W_in = Parameter(
             initializers.rescale(
-                kernel_initializer([hidden_size, input_size]), "linear", input_scaling
+                kernel_initializer_([hidden_size, input_size]), "linear", input_scaling
             ),
             requires_grad=False,
         )
         self.W_hat = Parameter(
             initializers.rescale(
-                recurrent_initializer([hidden_size, hidden_size]), "spectral", rho
+                recurrent_initializer_([hidden_size, hidden_size]), "spectral", rho
             ),
             requires_grad=False,
         )
@@ -99,7 +105,7 @@ class Reservoir(Module):
                 initializers.zeros((hidden_size,)), requires_grad=True
             )
 
-        self._aux_fwd_comp = None
+        self._aux_fwd_comp: Optional[Callable[..., Generator]] = None
 
     @torch.no_grad()
     def forward(
@@ -115,7 +121,7 @@ class Reservoir(Module):
         )
 
         embeddings = torch.stack(
-            [state for state in _fwd_comp(input.to(self.W_hat), initial_state, mask)],
+            [state for state in _fwd_comp(input.to(self.W_hat), initial_state, mask)],  # type: ignore[operator]
             dim=0,
         )
 
