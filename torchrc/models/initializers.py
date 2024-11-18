@@ -34,8 +34,9 @@ def rescale(
 
 def uniform(
     shape: torch.Size,
-    min_val: float = -1,
-    max_val: float = 1,
+    min_val: Optional[float] = None,
+    max_val: Optional[float] = None,
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """
     Uniform random tensor.
@@ -48,13 +49,19 @@ def uniform(
     Returns:
         torch.Tensor: initialized tensor.
     """
-    return torch.empty(shape).uniform_(min_val, max_val)
+    if min_val is None:
+        min_val = -1
+    if max_val is None:
+        max_val = -min_val
+
+    return torch.empty(shape, dtype=dtype).uniform_(min_val, max_val)
 
 
 def normal(
     shape: torch.Size,
     mean: float = 0,
     std: float = 1,
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """
     Normal random tensor. Can either be rescaled according to spectral radius `rho`,
@@ -68,12 +75,13 @@ def normal(
     Returns:
         torch.Tensor: initialized tensor.
     """
-    return torch.empty(shape).normal_(mean=mean, std=std)
+    return torch.empty(shape, dtype=dtype).normal_(mean=mean, std=std)
 
 
 def ring(
     n_units: int,
     values: Optional[Union[float, torch.Tensor]] = None,
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """
     Ring matrix. See:
@@ -91,15 +99,39 @@ def ring(
     Returns:
         torch.Tensor: initialized ring tensor.
     """
-    tensor = torch.eye(n_units).roll(1, 0)
+    tensor = torch.eye(n_units, dtype=dtype).roll(1, 0)
 
     if values is None:
-        values = uniform((n_units,))
+        values = uniform((n_units,), dtype=dtype)
     tensor.mul_(values)
     return tensor
 
 
-def orthogonal(shape: torch.Size) -> torch.Tensor:
+def lower_feedforward(
+    shape: torch.Size, dtype: torch.dtype = torch.float32
+) -> torch.Tensor:
+    """
+    Lower feedforward matrix.
+
+    Args:
+        shape (torch.Size): shape of the tensor.
+        dtype (torch.dtype, optional): data type. Defaults to torch.float32.
+
+    Returns:
+        torch.Tensor: initialized lower feedforward tensor.
+    """
+    if len(shape) != 2:
+        raise ValueError("Lower feedforward matrix must be 2D.")
+    if shape[0] != shape[1]:
+        raise ValueError("Lower feedforward matrix must be square.")
+
+    tensor = diagonal(shape[0], dtype=dtype)
+    idx = round(shape[0] / 2)
+    tensor[idx:, :idx] = uniform((shape[0] - idx, shape[0] - idx), dtype=dtype)
+    return tensor
+
+
+def orthogonal(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     """
     Orthogonal matrix. See:
         F. Mezzadri (2007). How to Generate Random Matrices from the Classical Compact
@@ -114,12 +146,12 @@ def orthogonal(shape: torch.Size) -> torch.Tensor:
         torch.Tensor: initialized orthogonal tensor.
     """
 
-    mat = torch.empty(shape)
+    mat = torch.empty(shape, dtype=dtype)
     torch.nn.init.orthogonal_(mat)
     return mat
 
 
-def ones(shape: torch.Size) -> torch.Tensor:
+def ones(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     """
     Ones tensor.
 
@@ -130,10 +162,10 @@ def ones(shape: torch.Size) -> torch.Tensor:
         torch.Tensor: initialized ones tensor.
     """
 
-    return torch.ones(shape)
+    return torch.ones(shape, dtype=dtype)
 
 
-def zeros(shape: torch.Size) -> torch.Tensor:
+def zeros(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     """
     Zeros tensor.
 
@@ -143,10 +175,15 @@ def zeros(shape: torch.Size) -> torch.Tensor:
     Returns:
         torch.Tensor: zeros tensor.
     """
-    return torch.zeros(shape)
+    return torch.zeros(shape, dtype=dtype)
 
 
-def diagonal(shape: int, min_val: float = -1, max_val: float = 1) -> torch.Tensor:
+def diagonal(
+    shape: int,
+    min_val: float = -1,
+    max_val: float = 1,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
     """
     Diagonal random tensor.
 
@@ -158,7 +195,7 @@ def diagonal(shape: int, min_val: float = -1, max_val: float = 1) -> torch.Tenso
     Returns:
         torch.Tensor: initialized tensor.
     """
-    return torch.diag(torch.empty(shape[0]).uniform_(min_val, max_val))
+    return torch.diag(torch.empty(shape[0], dtype=dtype).uniform_(min_val, max_val))
 
 
 def sparse(
@@ -167,6 +204,7 @@ def sparse(
     values_sampler: Optional[Callable[..., np.ndarray]] = None,
     zero_diagonal: bool = True,
     seed: Optional[int] = None,
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """
     Sparse random tensor.
@@ -183,14 +221,18 @@ def sparse(
         torch.Tensor: initialized sparse random tensor.
     """
     # use scipy.sparse.random to generate sparse random matrix
+    npdtype = _torch_to_numpy_dtype(dtype)
     if values_sampler is None:
-        values_sampler = lambda x: np.random.uniform(low=-1.0, high=1.0, size=x)
+        values_sampler = lambda x: np.random.uniform(
+            low=-1.0, high=1.0, size=x, dtype=npdtype
+        )
     sparse_mat = scipy.sparse.random(
         shape[0],
         shape[1],
         density=density,
         data_rvs=values_sampler,
         random_state=seed,
+        dtype=npdtype,
     ).toarray()
     if zero_diagonal:
         np.fill_diagonal(sparse_mat, 0)
@@ -255,6 +297,23 @@ def block_diagonal_coupling(
 
         couple_mat[margin_x[i] : margin_x[i + 1], margin_y[j - 1] : margin_y[j]] = corr
     return couple_mat
+
+
+def _torch_to_numpy_dtype(torch_dtype):
+    mapping = {
+        torch.float32: np.float32,
+        torch.float64: np.float64,
+        torch.float16: np.float16,
+        torch.int32: np.int32,
+        torch.int64: np.int64,
+        torch.int16: np.int16,
+        torch.int8: np.int8,
+        torch.uint8: np.uint8,
+        torch.bool: np.bool_,
+        torch.complex64: np.complex64,
+        torch.complex128: np.complex128,
+    }
+    return mapping.get(torch_dtype, None)
 
 
 __all__ = [

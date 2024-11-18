@@ -16,6 +16,7 @@ def fit_and_validate_readout(
     mode: Literal["min", "max"],
     weights: Optional[List[float]] = None,
     preprocess_fn: Optional[Callable] = None,
+    skip_first_n: int = 0,
     device: Optional[str] = None,
 ) -> Tuple[Tensor, Tensor]:
     """Applies the ridge regression on the training data with all the given l2 values
@@ -36,6 +37,8 @@ def fit_and_validate_readout(
         preprocess_fn (Optional[Callable], optional): a transformation to be applied to
             X before the linear transformation. Useful whenever this function is called
             to learn a Readout of a ESN. Defaults to None.
+        skip_first_n (Optional[int], optional): number of samples to skip in each batch
+            of the train_loader. Defaults to None.
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
@@ -48,18 +51,34 @@ def fit_and_validate_readout(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Training
-    all_W = fit_readout(train_loader, preprocess_fn, l2_values, weights, device)
-    if not isinstance(all_W, List):
+    all_W, A, B = fit_readout(
+        train_loader=train_loader,
+        preprocess_fn=preprocess_fn,
+        l2=l2_values,
+        weights=weights,
+        skip_first_n=skip_first_n,
+        device=device,
+    )
+    if not isinstance(all_W, list):
         all_W = [all_W]
 
     # Validation
-    eval_scores = validate_readout(all_W, eval_loader, score_fn, preprocess_fn, device)
+    eval_scores = validate_readout(
+        readout=all_W,
+        eval_loader=eval_loader,
+        score_fn=score_fn,
+        preprocess_fn=preprocess_fn,
+        skip_first_n=skip_first_n,
+        device=device,
+    )
+
+    if not isinstance(eval_scores, list):
+        return all_W[0], l2_values[0], eval_scores, A, B
 
     # Selection
     select_fn = max if mode == "max" else min
     best_idx, best_score = select_fn(enumerate(eval_scores), key=itemgetter(1))
-
-    return all_W[best_idx], l2_values[best_idx], best_score
+    return all_W[best_idx], l2_values[best_idx], best_score, A, B
 
 
 @torch.no_grad()
@@ -68,6 +87,7 @@ def fit_readout(
     preprocess_fn: Optional[Callable] = None,
     l2: Optional[Union[float, List[float]]] = None,
     weights: Optional[List[float]] = None,
+    skip_first_n: int = 0,
     device: Optional[str] = "cpu",
 ) -> Tuple[Tensor, Tensor]:
     """Applies the ridge regression on the training data with all the given l2 values
@@ -81,6 +101,8 @@ def fit_readout(
         l2_values (List[float]): List of all the candidate L2 values.
         weights (Optional[List[float]], optional): list of weights to be applied to each
             sample in the batch. Defaults to None.
+        skip_first_n (Optional[int], optional): number of samples to skip in each batch
+            of the train_loader. Defaults to None.
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
@@ -89,11 +111,22 @@ def fit_readout(
         Tuple[Tensor, float, float]: a Tuple containing the best linear matrix, the
             corrisponding l2 value and the metric value.
     """
-    A, B = compute_ridge_matrices(train_loader, preprocess_fn, weights, device)
+    A, B = compute_ridge_matrices(
+        loader=train_loader,
+        preprocess_fn=preprocess_fn,
+        weights=weights,
+        skip_first_n=skip_first_n,
+        device=device,
+    )
     if isinstance(l2, List):
-        return [solve_ab_decomposition(A, B, curr_l2, device) for curr_l2 in l2]
+        readout = [
+            solve_ab_decomposition(A=A, B=B, l2=curr_l2, device=device)
+            for curr_l2 in l2
+        ]
     else:
-        return solve_ab_decomposition(A, B, l2, device)
+        readout = solve_ab_decomposition(A=A, B=B, l2=l2, device=device)
+
+    return readout, A, B
 
 
 @torch.no_grad()
@@ -102,6 +135,7 @@ def validate_readout(
     eval_loader: DataLoader,
     score_fn: Callable[[Tensor, Tensor], float],
     preprocess_fn: Optional[Callable] = None,
+    skip_first_n: int = 0,
     device: Optional[str] = None,
 ):
     """Evaluates the linear transformations on the validation data.
@@ -115,6 +149,8 @@ def validate_readout(
         preprocess_fn (Optional[Callable], optional): a transformation to be applied
             to X before the linear transformation. Useful whenever this function is
             called to learn a Readout of a ESN. Defaults to None.
+        skip_first_n (Optional[int], optional): number of samples to skip in each batch
+            of the train_loader. Defaults to None.
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
@@ -125,7 +161,7 @@ def validate_readout(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if not isinstance(readout, List):
+    if not isinstance(readout, list):
         readout = [readout]
 
     # Validation
@@ -142,6 +178,7 @@ def validate_readout(
             x = x.reshape(-1, size_x[-1])
             y = y.reshape(-1, size_y[-1])
 
+        x, y = x[skip_first_n:], y[skip_first_n:]
         curr_n_samples = x.size(0)
         # Computing scores
         for i, W in enumerate(all_W):
@@ -160,6 +197,7 @@ def compute_ridge_matrices(
     loader: DataLoader,
     preprocess_fn: Optional[Callable] = None,
     weights: Optional[List[float]] = None,
+    skip_first_n: int = 0,
     device: Optional[str] = None,
 ) -> Tuple[Tensor, Tensor]:
     """
@@ -173,6 +211,8 @@ def compute_ridge_matrices(
             before computing the matrices. Defaults to None.
         weights (Optional[List[float]], optional): list of weights to be applied to each
             sample in the batch. Defaults to None.
+        skip_first_n (Optional[int], optional): number of samples to skip in each batch
+            of the train_loader. Defaults to None.
         device (Optional[str], optional): the device on which the function is executed.
             If None, the function is executed on a CUDA device if available, on CPU
             otherwise. Defaults to None.
@@ -198,8 +238,10 @@ def compute_ridge_matrices(
         if len(size_x) > 2:
             x = x.reshape(-1, size_x[-1])
             y = y.reshape(-1, size_y[-1])
-
         y = y.to(device).float()
+
+        x, y = x[skip_first_n:], y[skip_first_n:]
+
         batch_A, batch_B = (y.T @ x).cpu(), (x.T @ x).cpu()
 
         if weights is not None:

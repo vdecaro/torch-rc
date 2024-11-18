@@ -1,28 +1,34 @@
-from typing import Callable, List, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Union, overload
 import numpy as np
 import torch
 from torch import Size, Tensor, nn
 from torch.utils.data import DataLoader
 
-from torchrc.optim.ridge_regression import fit_and_validate_readout, fit_readout
+from torchrc.optim.ridge_regression import (
+    fit_and_validate_readout,
+    fit_readout,
+    solve_ab_decomposition,
+    validate_readout,
+)
 from .reservoir import Reservoir
 
 
 class EchoStateNetwork(nn.Module):
 
+    @overload
     def __init__(
         self,
         input_size: int,
-        layers: List[int],
         output_size: int,
-        arch_type: Literal["stacked", "multi"] = "stacked",
+        layer_sizes: List[int],
+        arch_type: Literal["stacked", "multi", "parallel"] = "stacked",
         activation: str = "tanh",
         leakage: float = 1.0,
         input_scaling: float = 0.9,
         rho: float = 0.99,
         bias: bool = False,
         kernel_initializer: Union[str, Callable[[Size], Tensor]] = "uniform",
-        recurrent_initializer: Union[str, Callable[[Size], Tensor]] = "normal",
+        recurrent_initializer: Union[str, Callable[[Size], Tensor]] = "uniform",
         net_gain_and_bias: bool = False,
     ):
         """Initializes the Echo State Network.
@@ -36,26 +42,108 @@ class EchoStateNetwork(nn.Module):
             rho (float, optional): spectral radius. Defaults to 0.99.
             bias (bool, optional): whether to use bias. Defaults to False.
             kernel_initializer (Union[str, Callable[[Size], Tensor]], optional): kernel initializer. Defaults to "uniform".
-            recurrent_initializer (Union[str, Callable[[Size], Tensor]], optional): recurrent initializer. Defaults to "normal".
+            recurrent_initializer (Union[str, Callable[[Size], Tensor]], optional): recurrent initializer. Defaults to "uniform".
             net_gain_and_bias (bool, optional): whether to use net gain and bias. Defaults to False.
         """
-        if len(layers) == 0:
+        ...
+
+    @overload
+    def __init__(
+        reservoirs: List[Reservoir],
+        output_size: int,
+        combine_reservoirs: Literal[
+            "stacked", "multi", "parallel", "merge", "merge_antisymmetric"
+        ] = "stacked",
+        joint_scaling: float = 1.0,
+        independent_inputs: bool = False,
+    ):
+        """Initializes the Echo State Network.
+
+        Args:
+            reservoirs (List[Reservoir]): list of reservoirs.
+            output_size (int): output size.
+            combine_reservoirs (Literal["parallel", "joint"], optional): how to combine
+                the reservoirs. Defaults to "stacked".
+        """
+        ...
+
+    def __init__(
+        self,
+        input_size: Optional[int] = None,
+        output_size: Optional[int] = None,
+        layer_sizes: Optional[List[int]] = None,
+        arch_type: Literal["stacked", "multi", "parallel"] = "stacked",
+        activation: str = "tanh",
+        leakage: float = 1.0,
+        input_scaling: float = 0.9,
+        rho: float = 0.99,
+        bias: bool = False,
+        kernel_initializer: Union[str, Callable[[Size], Tensor]] = "uniform",
+        recurrent_initializer: Union[str, Callable[[Size], Tensor]] = "uniform",
+        net_gain_and_bias: bool = False,
+        reservoirs: Optional[List[Reservoir]] = None,
+        combine_reservoirs: Literal[
+            "stacked", "multi", "parallel", "merge", "merge_antisymmetric"
+        ] = "stacked",
+        joint_scaling: float = 1.0,
+        independent_inputs: bool = False,
+    ):
+        super().__init__()
+        if reservoirs is not None:
+            self._from_reservoirs(
+                reservoirs,
+                output_size,
+                combine_reservoirs,
+                joint_scaling,
+                independent_inputs,
+            )
+        else:
+            self._from_hyperparameters(
+                input_size,
+                output_size,
+                layer_sizes,
+                arch_type,
+                activation,
+                leakage,
+                input_scaling,
+                rho,
+                bias,
+                kernel_initializer,
+                recurrent_initializer,
+                net_gain_and_bias,
+            )
+
+    def _from_hyperparameters(
+        self,
+        input_size: int,
+        output_size: int,
+        layer_sizes: List[int] = None,
+        arch_type: Literal["stacked", "multi", "parallel"] = "stacked",
+        activation: str = "tanh",
+        leakage: float = 1.0,
+        input_scaling: float = 0.9,
+        rho: float = 0.99,
+        bias: bool = False,
+        kernel_initializer: Union[str, Callable[[Size], Tensor]] = "uniform",
+        recurrent_initializer: Union[str, Callable[[Size], Tensor]] = "uniform",
+        net_gain_and_bias: bool = False,
+    ):
+        if layer_sizes is None or len(layer_sizes) == 0:
             raise ValueError("At least one hidden layer must be defined.")
-        if len(layers) > 1 and net_gain_and_bias:
+        if len(layer_sizes) > 1 and net_gain_and_bias:
             raise ValueError(
                 "Net gain and bias can only be used with one hidden layer."
             )
-        if arch_type not in ["stacked", "multi"]:
+        if arch_type not in ["stacked", "multi", "parallel"]:
             raise ValueError(
-                f"Unknown architecture type: {arch_type}. Choose from 'stacked' or 'multi'."
+                f"Unknown architecture type: {arch_type}. Choose from 'stacked', 'multi' or 'parallel'."
             )
-        super().__init__()
-        self._arch_type = arch_type
+        self.arch_type = arch_type
         self.reservoirs = nn.ModuleList(
             [
                 Reservoir(
-                    input_size if i == 0 else layers[i - 1],
-                    layers[i],
+                    input_size if i == 0 else layer_sizes[i - 1],
+                    layer_sizes[i],
                     activation,
                     leakage,
                     input_scaling,
@@ -65,15 +153,47 @@ class EchoStateNetwork(nn.Module):
                     recurrent_initializer,
                     net_gain_and_bias,
                 )
-                for i in range(len(layers))
+                for i in range(len(layer_sizes))
             ]
         )
-
         self.readout = nn.Parameter(
             torch.normal(
                 mean=0,
-                std=1 / np.sqrt(self.state_dim),
-                size=(self.state_dim, output_size),
+                std=1 / np.sqrt(self.hidden_size),
+                size=(self.hidden_size, output_size),
+            ),
+            requires_grad=True,
+        )
+        self.ridge_A, self.ridge_B = None, None
+
+    def _from_reservoirs(
+        self,
+        reservoirs: List[Reservoir],
+        output_size: int,
+        combine_reservoirs: Literal[
+            "stacked", "multi", "parallel", "merge"
+        ] = "stacked",
+        joint_scaling: Optional[float] = None,
+        independent_inputs: bool = False,
+    ):
+        if combine_reservoirs in ["parallel", "merge"]:
+            self.arch_type = "stacked"
+            reservoir, others = reservoirs[0], reservoirs[1:]
+            reservoir = reservoir.merge_reservoirs(
+                others,
+                joint_scaling=joint_scaling,
+                coupled=combine_reservoirs == "merge",
+                independent_inputs=independent_inputs,
+            )
+            reservoirs = [reservoir]
+        else:
+            self.arch_type = combine_reservoirs
+        self.reservoirs = nn.ModuleList(reservoirs)
+        self.readout = nn.Parameter(
+            torch.normal(
+                mean=0,
+                std=1 / np.sqrt(self.hidden_size),
+                size=(self.hidden_size, output_size),
             ),
             requires_grad=True,
         )
@@ -99,27 +219,45 @@ class EchoStateNetwork(nn.Module):
                 f"Initial state must be provided for each reservoir. Expected "
                 f"{len(self.reservoirs)}, got {len(initial_state)}."
             )
-        states = []
-        for i, reservoir in enumerate(self.reservoirs):
-            x = reservoir(x, initial_state[i] if initial_state else None)
-            states.append(x)
 
-        if self._arch_type == "multi":
-            x = torch.cat(states, dim=-1)
-
+        x, states = self.apply_reservoirs(x, initial_state)
         pred = x @ self.readout
 
         if return_states:
             return pred, states
         return pred
 
+    def apply_reservoirs(
+        self, x: torch.Tensor, initial_state: Optional[torch.Tensor]
+    ) -> torch.Tensor:
+        """Apply the reservoirs to the input.
+
+        Args:
+            x (torch.Tensor): input tensor.
+            initial_state (Optional[torch.Tensor]): initial state of the reservoirs.
+
+        Returns:
+            torch.Tensor: output tensor.
+        """
+        states = []
+        for i, reservoir in enumerate(self.reservoirs):
+            x = reservoir(x, initial_state[i] if initial_state else None)
+            states.append(x)
+
+        if self.arch_type in ["multi", "parallel"]:
+            x = torch.cat(states, dim=-1)
+
+        return x, states
+
     def fit_readout(
         self,
         train_loader: DataLoader,
-        l2_value: Union[float, List[float]] = 1e-6,
+        l2_value: Union[float, List[float]] = 1e-9,
+        washout: int = 0,
         score_fn: Optional[Callable[[Tensor, Tensor], float]] = None,
         mode: Optional[Literal["min", "max"]] = None,
         eval_on: Optional[Union[Literal["train"], DataLoader]] = None,
+        store_matrices: bool = False,
     ):
         """Fit the readout layer.
 
@@ -133,14 +271,6 @@ class EchoStateNetwork(nn.Module):
             preprocess_fn (Optional[Callable], optional): preprocessing function. Defaults to None.
             device (Optional[str], optional): device to use. Defaults to None.
         """
-
-        def preprocess_fn(x):
-            if self._arch_type == "multi":
-                return torch.cat(
-                    [reservoir(x) for reservoir in self.reservoirs], dim=-1
-                )
-            elif self._arch_type == "stacked":
-                return self.reservoirs[-1](x)
 
         if eval_on:
             if score_fn is None:
@@ -158,32 +288,83 @@ class EchoStateNetwork(nn.Module):
             if not isinstance(l2_value, list):
                 l2_value = [l2_value]
 
-            readout, best_l2, best_score = fit_and_validate_readout(
+            readout, best_l2, best_score, A, B = fit_and_validate_readout(
                 train_loader=train_loader,
                 eval_loader=eval_loader,
                 l2_values=l2_value,
-                preprocess_fn=preprocess_fn,
+                preprocess_fn=lambda x: _preprocess_fn(self, x),
+                skip_first_n=washout,
                 score_fn=score_fn,
                 mode=mode,
                 device=next(self.parameters()).device,
             )
-            print(f"ESN Trained. \n\Chosen L2: {best_l2}\n\Score: {best_score:.4f}")
 
         else:
-            readout = fit_readout(
+            readout, A, B = fit_readout(
                 train_loader,
-                preprocess_fn=preprocess_fn,
+                preprocess_fn=lambda x: _preprocess_fn(self, x),
+                skip_first_n=washout,
                 l2=l2_value,
                 device=next(self.parameters()).device,
             )
-            print("ESN Trained.")
 
         self.readout.data = readout
+        if store_matrices:
+            self.ridge_A, self.ridge_B = A, B
+        if eval_on:
+            return best_score
+
+    def fit_from_matrices(self, l2: Optional[float] = None):
+        """Fit the readout layer from the stored matrices."""
+
+        if self.ridge_A is None or self.ridge_B is None:
+            raise ValueError("Matrices have not been stored.")
+
+        self.readout.data = solve_ab_decomposition(
+            A=self.ridge_A, B=self.ridge_B, l2=l2, device=next(self.parameters()).device
+        )
+
+    def evaluate(
+        self,
+        test_loader: DataLoader,
+        score_fn: Callable[[Tensor, Tensor], float],
+        washout: int = 0,
+    ) -> float:
+        """Evaluate the model.
+
+        Args:
+            test_loader (DataLoader): test data loader.
+            score_fn (Callable[[Tensor, Tensor], float]): scoring function.
+            washout (int, optional): washout steps. Defaults to 0.
+
+        Returns:
+            float: evaluation score.
+        """
+        return validate_readout(
+            self.readout,
+            test_loader,
+            preprocess_fn=lambda x: _preprocess_fn(self, x),
+            score_fn=score_fn,
+            skip_first_n=washout,
+            device=next(self.parameters()).device,
+        )
 
     @property
-    def state_dim(self) -> int:
+    def hidden_size(self) -> int:
         """Returns the size of the hidden state."""
-        if self._arch_type == "stacked":
+        if self.arch_type == "stacked":
             return self.reservoirs[-1].hidden_size
-        elif self._arch_type == "multi":
+        else:
             return sum([reservoir.hidden_size for reservoir in self.reservoirs])
+
+
+def _preprocess_fn(self: EchoStateNetwork, x: torch.Tensor) -> torch.Tensor:
+    states = []
+    for reservoir in self.reservoirs:
+        x = reservoir(x)
+        states.append(x)
+
+    if self.arch_type in ["multi", "parallel"]:
+        return torch.cat(states, dim=-1)
+    else:
+        return states[-1]

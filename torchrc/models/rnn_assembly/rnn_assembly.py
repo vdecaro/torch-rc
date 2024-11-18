@@ -1,10 +1,14 @@
-from typing import Callable, List, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Tuple, Union
 import numpy as np
 import torch
-from torch import nn
+from torch import Tensor, nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+
+from torchrc.models import initializers
+from torchrc.optim.ridge_regression import fit_readout, fit_and_validate_readout
 from .block_diagonal import BlockDiagonal
-from .skew_symm_coupling import SkewAntisymmetricCoupling
+from .skew_symm_coupling import SkewAntisymmetricCoupling, get_coupling_indices
 
 
 class RNNAssembly(nn.Module):
@@ -13,59 +17,55 @@ class RNNAssembly(nn.Module):
         self,
         input_size: int,
         out_size: int,
-        block_sizes: List[int],
-        block_init_fn: Callable[[torch.Size], torch.Tensor],
-        coupling_block_init_fn: Optional[Callable[[torch.Size], torch.Tensor]] = None,
-        coupling_perc: Union[int, float] = 0.05,
-        generalized_coupling: bool = False,
+        blocks: List[torch.Tensor],
+        coupling_blocks: List[torch.Tensor],
+        coupling_topology: Union[int, float, List[Tuple[int, int]]],
         eul_step: float = 1e-2,
-        activation: str = "relu",
-        constrained_blocks: Optional[Literal["tanh", "clip", "orthogonal"]] = None,
+        activation: str = "tanh",
+        constrained_blocks: Optional[
+            Literal["fixed", "tanh", "clip", "orthogonal"]
+        ] = None,
+        dtype: torch.dtype = torch.float32,
     ):
         """Initializes the RNN of RNNs layer.
 
         Args:
-            input_size (int): input size.
-            out_size (int): output size.
-            block_sizes (List[int]): list of block sizes.
-            coupling_indices (List[Tuple[int, int]]): list of coupling indices.
-            block_init_fn (Callable[[torch.Size], torch.Tensor]): block initialization
-                function.
-            coupling_block_init_fn (Optional[Callable[[torch.Size], torch.Tensor]], optional):
-                coupling block initialization function. Defaults to None.
-            eul_step (float, optional): euler step. Defaults to 1e-2.
+            input_size (int): size of the input.
+            out_size (int): size of the output.
+            blocks (List[torch.Tensor]): list of blocks.
+            coupling_blocks (List[torch.Tensor]): list of coupling blocks.
+            coupling_topology (Union[int, float, List[Tuple[int, int]]]): coupling topology.
+            eul_step (float, optional): Euler step. Defaults to 1e-2.
             activation (str, optional): activation function. Defaults to "tanh".
-            adapt_blocks (bool, optional): whether to adapt blocks. Defaults to False.
-            squash_blocks (bool, optional): whether to squash blocks. Defaults to False.
+            constrained_blocks (Optional[Literal["fixed", "tanh", "clip", "orthogonal"]], optional):
+                type of constraint. Defaults to None.
+            dtype (torch.dtype, optional): data type. Defaults to torch.float32.
         """
         super().__init__()
         self._input_size = input_size
-        self._block_sizes = block_sizes
-        self._coupling_perc = coupling_perc
         self._eul_step = eul_step
         self._activation = activation
+        self._dtype = dtype
+
+        self._blocks = BlockDiagonal(
+            blocks=blocks,
+            constrained=constrained_blocks,
+        )
+
+        self._couplings = SkewAntisymmetricCoupling(
+            block_sizes=self._blocks.block_sizes,
+            coupling_blocks=coupling_blocks,
+            coupling_topology=coupling_topology,
+        )
 
         self._input_mat = nn.Parameter(
             torch.normal(
                 mean=0,
                 std=1 / np.sqrt(self.hidden_size),
                 size=(self._input_size, self.hidden_size),
+                dtype=self._dtype,
             ),
-            requires_grad=True,
-        )
-
-        self._blocks = BlockDiagonal(
-            blocks=block_init_fn,
-            block_sizes=block_sizes,
-            constrained=constrained_blocks,
-        )
-
-        self._couplings = SkewAntisymmetricCoupling(
-            block_sizes=block_sizes,
-            coupling_block_init_fn=coupling_block_init_fn,
-            coupling_perc=coupling_perc,
-            generalized=generalized_coupling,
-            diag_block_matrix=self._blocks.blocks if generalized_coupling else None,
+            requires_grad=False,
         )
 
         self._out_mat = nn.Parameter(
@@ -73,7 +73,49 @@ class RNNAssembly(nn.Module):
                 mean=0,
                 std=1 / np.sqrt(self.hidden_size),
                 size=(self.hidden_size, out_size),
+                dtype=self._dtype,
             ),
+        )
+        self.activ_fn = getattr(torch, self._activation)
+
+    @staticmethod
+    def from_initializers(
+        input_size: int,
+        out_size: int,
+        block_sizes: List[int],
+        block_init_fn: Union[str, Callable[[torch.Size], torch.Tensor]],
+        coupling_block_init_fn: Union[str, Callable[[torch.Size], torch.Tensor]],
+        coupling_topology: Union[int, float, List[Tuple[int, int]], Literal["ring"]],
+        eul_step: float = 1e-2,
+        activation: str = "tanh",
+        constrained_blocks: Optional[
+            Literal["fixed", "tanh", "clip", "orthogonal"]
+        ] = None,
+        dtype: torch.dtype = torch.float32,
+    ) -> "RNNAssembly":
+
+        if isinstance(block_init_fn, str):
+            block_init_fn = getattr(initializers, block_init_fn)
+        if isinstance(coupling_block_init_fn, str):
+            coupling_block_init_fn = getattr(initializers, coupling_block_init_fn)
+
+        blocks = [block_init_fn((b_size, b_size), dtype) for b_size in block_sizes]
+        coupling_indices = get_coupling_indices(block_sizes, coupling_topology)
+        coupling_blocks = [
+            coupling_block_init_fn((block_sizes[i], block_sizes[j]), dtype)
+            for i, j in coupling_indices
+        ]
+
+        return RNNAssembly(
+            input_size=input_size,
+            out_size=out_size,
+            blocks=blocks,
+            coupling_blocks=coupling_blocks,
+            coupling_topology=coupling_indices,
+            eul_step=eul_step,
+            activation=activation,
+            constrained_blocks=constrained_blocks,
+            dtype=dtype,
         )
 
     def forward(
@@ -85,25 +127,98 @@ class RNNAssembly(nn.Module):
         if initial_state is None:
             initial_state = torch.zeros(self.hidden_size).to(self._input_mat)
 
-        embeddings = []
-        state = initial_state
+        states = self.compute_states(input, initial_state, mask)
+        output = states @ self._out_mat
+        if self._dtype == torch.complex64:
+            output = torch.abs(output)
+        return output, states
+
+    def compute_states(
+        self,
+        input: torch.Tensor,
+        initial_state: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        states = []
+        state = (
+            initial_state
+            if initial_state is not None
+            else torch.zeros(self.hidden_size, dtype=self._dtype).to(self._input_mat)
+        )
         timesteps = input.shape[0]
-        if self._activation == "selfnorm":
-            activ_fn = lambda x: F.normalize(x, p=2, dim=-1)
-        else:
-            activ_fn = getattr(torch, self._activation)
         for t in range(timesteps):
             state = state + self._eul_step * (
                 -state
-                + self._blocks(activ_fn(state))
+                + self._blocks(self.activ_fn(state))
                 + self._couplings(state)
-                + input[t] @ self._input_mat
+                + F.linear(input[t], self._input_mat)
             )
-            embeddings.append(state if mask is None else mask * state)
-        embeddings = torch.stack(embeddings, dim=0)
-        output = embeddings @ self._out_mat
-        return output, embeddings
+            states.append(state if mask is None else mask * state)
+        return torch.stack(states, dim=0)
+
+    def fit_readout(
+        self,
+        train_loader: DataLoader,
+        l2_value: Union[float, List[float]] = 1e-9,
+        washout: int = 0,
+        score_fn: Optional[Callable[[Tensor, Tensor], float]] = None,
+        mode: Optional[Literal["min", "max"]] = None,
+        eval_on: Optional[Union[Literal["train"], DataLoader]] = None,
+    ):
+        """Fit the readout layer.
+
+        Args:
+            train_loader (DataLoader): training data loader.
+            eval_loader (DataLoader): evaluation data loader.
+            l2_values (List[float]): list of L2 regularization values.
+            score_fn (Callable[[Tensor, Tensor], float]): scoring function.
+            mode (Literal["min", "max"]): optimization mode.
+            weights (Optional[List[float]], optional): weights for the loss. Defaults to None.
+            preprocess_fn (Optional[Callable], optional): preprocessing function. Defaults to None.
+            device (Optional[str], optional): device to use. Defaults to None.
+        """
+
+        if eval_on:
+            if score_fn is None:
+                raise ValueError("Score function must be provided for validation.")
+            if score_fn is not None and mode is None:
+                raise ValueError("Mode must be provided for optimization.")
+
+            if eval_on == "train":
+                eval_loader = train_loader
+            elif isinstance(eval_on, DataLoader):
+                eval_loader = eval_on
+            else:
+                raise ValueError("Evaluation data must be provided as DataLoader.")
+
+            if not isinstance(l2_value, list):
+                l2_value = [l2_value]
+
+            readout, best_l2, best_score = fit_and_validate_readout(
+                train_loader=train_loader,
+                eval_loader=eval_loader,
+                l2_values=l2_value,
+                preprocess_fn=self.compute_states,
+                skip_first_n=washout,
+                score_fn=score_fn,
+                mode=mode,
+                device=next(self.parameters()).device,
+            )
+
+        else:
+            readout = fit_readout(
+                train_loader,
+                preprocess_fn=self.compute_states,
+                skip_first_n=washout,
+                l2=l2_value,
+                device=next(self.parameters()).device,
+            )
+
+        self._out_mat.data = readout
+
+        if eval_on:
+            return best_score
 
     @property
     def hidden_size(self) -> int:
-        return sum(self._block_sizes)
+        return self._blocks.layer_size
