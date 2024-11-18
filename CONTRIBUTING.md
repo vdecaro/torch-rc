@@ -1,6 +1,6 @@
 # Contributing Guidelines
 
-We're glad you're considering contributing to torchrc. Before you proceed, please take a moment to review the guidelines below to ensure a smooth contribution process.
+We're glad you're considering contributing to torchdyno. Before you proceed, please take a moment to review the guidelines below to ensure a smooth contribution process.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ To contribute to this project, follow these steps:
 2. **Clone the repository:** Clone your forked repository to your local machine. Replace `<your-username>` with your GitHub username.
 
     ```bash
-    git clone https://github.com/<your-username>/torchrc.git
+    git clone https://github.com/<your-username>/torchdyno.git
     ```
 
 3. **Create a new branch:** Create a new branch for your changes. Use a descriptive name that reflects the nature of your work.
