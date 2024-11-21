@@ -353,7 +353,7 @@ class EchoStateNetwork(nn.Module):
                 device=next(self.parameters()).device,
             )
 
-        self.readout.data = readout
+        self.readout.data = readout.T
         if store_matrices:
             self.ridge_A, self.ridge_B = A, B
         if eval_on:
