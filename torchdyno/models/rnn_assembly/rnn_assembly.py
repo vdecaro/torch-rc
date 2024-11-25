@@ -82,7 +82,7 @@ class RNNAssembly(nn.Module):
             torch.normal(
                 mean=0,
                 std=1 / np.sqrt(self.hidden_size),
-                size=(self._input_size, self.hidden_size),
+                size=(self.hidden_size, self._input_size),
                 dtype=self._dtype,
             ),
             requires_grad=False,
@@ -92,7 +92,7 @@ class RNNAssembly(nn.Module):
             torch.normal(
                 mean=0,
                 std=1 / np.sqrt(self.hidden_size),
-                size=(self.hidden_size, out_size),
+                size=(out_size, self.hidden_size),
                 dtype=self._dtype,
             ),
         )
@@ -168,10 +168,11 @@ class RNNAssembly(nn.Module):
         mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if initial_state is None:
-            initial_state = torch.zeros(self.hidden_size).to(self._input_mat)
+            initial_state = torch.zeros(self.hidden_size, dtype=self._dtype).to(self._input_mat)
+        input = input.to(dtype=self._dtype)
 
         states = self.compute_states(input, initial_state, mask)
-        output = states @ self._out_mat
+        output = F.linear(states, self._out_mat)
         if self._dtype == torch.complex64:
             output = torch.real(output)
         return output, states
