@@ -20,6 +20,7 @@ class BlockDiagonal(nn.Module):
         blocks: List[torch.Tensor],
         bias: bool = False,
         constrained: Optional[Literal["fixed", "tanh", "clip", "orthogonal"]] = None,
+        dtype: torch.dtype = torch.float32,
     ):
         """Initializes the block diagonal matrix.
 
@@ -34,11 +35,11 @@ class BlockDiagonal(nn.Module):
         self._constrained = constrained
 
         self._blocks = nn.Parameter(
-            block_diagonal(blocks),
+            block_diagonal(blocks, dtype=dtype),
             requires_grad=constrained != "fixed",
         )
         self._blocks_mask = nn.Parameter(self._blocks != 0, requires_grad=False)
-        self._support_eye = torch.eye(self.layer_size)
+        self._support_eye = torch.eye(self.layer_size, dtype=dtype)
         if bias:
             self.bias = nn.Parameter(
                 torch.normal(
@@ -51,6 +52,10 @@ class BlockDiagonal(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return F.linear(x, self.blocks, self.bias)
+
+    def eval(self) -> None:
+        super().eval()
+        self._cached_blocks = None
 
     @property
     def n_blocks(self) -> int:
@@ -76,7 +81,12 @@ class BlockDiagonal(nn.Module):
                 elif self._constrained == "clip":
                     blocks_ = torch.clamp(blocks_, -0.999, 0.999)
             else:
-                symm = self._blocks - self._blocks.T
+                symm_support = (
+                    self._blocks.conj().T
+                    if self._blocks.is_complex()
+                    else self._blocks.T
+                )
+                symm = self._blocks - symm_support
                 blocks_ = self._support_eye + symm + (symm @ symm) / 2
             self._cached_blocks = blocks_
 

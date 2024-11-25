@@ -20,6 +20,7 @@ class SkewAntisymmetricCoupling(nn.Module):
         block_sizes: List[int],
         coupling_blocks: List[torch.Tensor],
         coupling_topology: List[Tuple[int, int]],
+        dtype: torch.dtype = torch.float32,
     ):
         """Initializes the skew antisymmetric coupling layer.
 
@@ -44,7 +45,9 @@ class SkewAntisymmetricCoupling(nn.Module):
                         (i, j, coupling_blocks[idx])
                         for idx, (i, j) in enumerate(coupling_topology)
                     ],
-                )
+                    dtype=dtype,
+                ),
+                dtype=dtype,
             ),
         )
         self._couple_mask = nn.Parameter(self._couplings != 0, requires_grad=False)
@@ -53,11 +56,20 @@ class SkewAntisymmetricCoupling(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return F.linear(x, self.couplings)
 
+    def eval(self) -> None:
+        super().eval()
+        self._cached_coupling = None
+
     @property
     def couplings(self) -> torch.Tensor:
         if self._cached_coupling is None or self.training:
             couple_masked: torch.Tensor = self._couple_mask * self._couplings
-            self._cached_coupling = couple_masked - couple_masked.T
+            anti_support = (
+                couple_masked.conj().T
+                if self._couple_mask.is_complex()
+                else couple_masked.T
+            )
+            self._cached_coupling = couple_masked - anti_support
         return self._cached_coupling
 
 

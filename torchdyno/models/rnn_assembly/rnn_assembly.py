@@ -68,12 +68,14 @@ class RNNAssembly(nn.Module):
         self._blocks = BlockDiagonal(
             blocks=blocks,
             constrained=constrained_blocks,
+            dtype=self._dtype,
         )
 
         self._couplings = SkewAntisymmetricCoupling(
             block_sizes=self._blocks.block_sizes,
             coupling_blocks=coupling_blocks,
             coupling_topology=coupling_topology,
+            dtype=self._dtype,
         )
 
         self._input_mat = nn.Parameter(
@@ -171,7 +173,7 @@ class RNNAssembly(nn.Module):
         states = self.compute_states(input, initial_state, mask)
         output = states @ self._out_mat
         if self._dtype == torch.complex64:
-            output = torch.abs(output)
+            output = torch.real(output)
         return output, states
 
     def compute_states(

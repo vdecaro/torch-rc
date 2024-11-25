@@ -239,7 +239,7 @@ def sparse(
 
 
 def block_diagonal(
-    blocks: List[torch.Tensor],
+    blocks: List[torch.Tensor], dtype: torch.dtype = torch.float32
 ) -> torch.Tensor:
     """Create a block diagonal matrix from a list of matrices.
 
@@ -253,7 +253,7 @@ def block_diagonal(
     """
     n_total = sum([b.shape[0] for b in blocks])
 
-    mat = torch.zeros(n_total, n_total)
+    mat = torch.zeros(n_total, n_total, dtype=dtype)
     curr_idx = 0
     for block in blocks:
         curr_units = block.shape[0]
@@ -264,7 +264,9 @@ def block_diagonal(
 
 
 def block_diagonal_coupling(
-    block_sizes: List[int], couplings: List[Tuple[int, int, torch.Tensor]]
+    block_sizes: List[int],
+    couplings: List[Tuple[int, int, torch.Tensor]],
+    dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """Create the coupling matrix for a given block diagonal matrix.
 
@@ -282,7 +284,7 @@ def block_diagonal_coupling(
         margin_x.append(margin_x[-1] + block_sizes[i - 1])
         margin_y.append(margin_y[-1] + block_sizes[i])
 
-    couple_mat = torch.zeros(n_total, n_total)
+    couple_mat = torch.zeros(n_total, n_total, dtype=dtype)
     for i, j, corr in couplings:
         if i == j:
             raise ValueError(
