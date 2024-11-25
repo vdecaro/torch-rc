@@ -148,9 +148,25 @@ def orthogonal(shape: torch.Size, dtype: torch.dtype = torch.float32) -> torch.T
     Returns:
         torch.Tensor: initialized orthogonal tensor.
     """
-
     mat = torch.empty(shape, dtype=dtype)
-    torch.nn.init.orthogonal_(mat)
+    if not mat.is_complex():
+        torch.nn.init.orthogonal_(mat)
+    else:
+        # Create a random real and imaginary part
+        real = torch.randn(*shape)
+        imag = torch.randn(*shape)
+
+        # Combine to create a complex matrix
+        A = real + 1j * imag
+
+        # Perform QR decomposition to ensure orthogonality
+        Q, R = torch.linalg.qr(A)
+
+        # Ensure unitary by normalizing Q
+        Q = Q / torch.sqrt(torch.sum(torch.abs(Q) ** 2, dim=0, keepdim=True))
+
+        mat = Q
+
     return mat
 
 
