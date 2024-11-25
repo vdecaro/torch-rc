@@ -55,7 +55,7 @@ def uniform(
         torch.Tensor: initialized tensor.
     """
     if min_val is None:
-        min_val = -1
+        min_val = -1 / np.sqrt(shape[0])
     if max_val is None:
         max_val = -min_val
 
