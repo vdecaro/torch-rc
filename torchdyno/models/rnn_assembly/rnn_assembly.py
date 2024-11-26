@@ -173,7 +173,7 @@ class RNNAssembly(nn.Module):
 
         states = self.compute_states(input, initial_state, mask)
         output = F.linear(states, self._out_mat)
-        if self._dtype == torch.complex64:
+        if torch.is_complex(output):
             output = torch.real(output)
         return output, states
 
